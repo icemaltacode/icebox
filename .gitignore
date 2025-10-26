@@ -1,0 +1,47 @@
+# macOS cruft
+.DS_Store
+
+# Node / package managers
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Builds & caches
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.turbo/
+
+# TypeScript & tooling outputs
+*.tsbuildinfo
+
+# Serverless artifacts
+.serverless/
+.webpack/
+.dynamodb/
+
+# Local environment & secrets
+.env
+.env.*
+!.env.example
+
+# IDE & editor folders
+.idea/
+.vscode/
+*.code-workspace
+
+# Coverage / testing
+coverage/
+.nyc_output/
+
+# OS / user-specific
+Thumbs.db
+
+# Temporary Docs
+colours.md
+plan.md
