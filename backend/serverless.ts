@@ -25,7 +25,8 @@ const serverlessConfiguration = {
       SECRETS_PREFIX: '${env:SECRETS_PREFIX, "/icebox/${sls:stage}/"}',
       ADMIN_USER_POOL_ID: { Ref: 'AdminUserPool' } as unknown as string,
       ADMIN_USER_POOL_CLIENT_ID: { Ref: 'AdminUserPoolClient' } as unknown as string,
-      ADMIN_USER_POOL_REGION: '${self:provider.region}'
+      ADMIN_USER_POOL_REGION: '${self:provider.region}',
+      ARCHIVE_QUEUE_URL: { Ref: 'ArchiveQueue' } as unknown as string
     },
     iam: {
       role: {
@@ -77,6 +78,16 @@ const serverlessConfiguration = {
             Effect: 'Allow',
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
             Resource: '*'
+          },
+          {
+            Effect: 'Allow',
+            Action: ['sqs:SendMessage', 'sqs:GetQueueAttributes', 'sqs:GetQueueUrl'],
+            Resource: [{ 'Fn::GetAtt': ['ArchiveQueue', 'Arn'] }]
+          },
+          {
+            Effect: 'Allow',
+            Action: ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:ChangeMessageVisibility'],
+            Resource: [{ 'Fn::GetAtt': ['ArchiveQueue', 'Arn'] }]
           },
           {
             Effect: 'Allow',
@@ -145,13 +156,38 @@ const serverlessConfiguration = {
     },
     completeUpload: {
       handler: 'src/functions/completeUpload.handler',
-      timeout: 120,
-      memorySize: 1536,
+      timeout: 10,
+      memorySize: 512,
       events: [
         {
           httpApi: {
             method: 'post',
             path: '/uploads/{submissionId}/complete'
+          }
+        }
+      ]
+    },
+    getUploadStatus: {
+      handler: 'src/functions/getUploadStatus.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'get',
+            path: '/uploads/{submissionId}'
+          }
+        }
+      ]
+    },
+    processUploadArchive: {
+      handler: 'src/functions/processUploadArchive.handler',
+      timeout: 300,
+      memorySize: 2048,
+      events: [
+        {
+          sqs: {
+            arn: { 'Fn::GetAtt': ['ArchiveQueue', 'Arn'] },
+            batchSize: 1,
+            maximumBatchingWindow: 0
           }
         }
       ]
@@ -364,6 +400,32 @@ const serverlessConfiguration = {
           BillingMode: 'PAY_PER_REQUEST',
           AttributeDefinitions: [{ AttributeName: 'courseCode', AttributeType: 'S' }],
           KeySchema: [{ AttributeName: 'courseCode', KeyType: 'HASH' }],
+          Tags: [
+            { Key: 'Project', Value: 'ICEBox' },
+            { Key: 'Stage', Value: '${sls:stage}' }
+          ]
+        }
+      },
+      ArchiveQueueDlq: {
+        Type: 'AWS::SQS::Queue',
+        Properties: {
+          QueueName: 'icebox-${sls:stage}-archive-dlq',
+          MessageRetentionPeriod: 1209600,
+          Tags: [
+            { Key: 'Project', Value: 'ICEBox' },
+            { Key: 'Stage', Value: '${sls:stage}' }
+          ]
+        }
+      },
+      ArchiveQueue: {
+        Type: 'AWS::SQS::Queue',
+        Properties: {
+          QueueName: 'icebox-${sls:stage}-archive',
+          VisibilityTimeout: 400,
+          RedrivePolicy: {
+            deadLetterTargetArn: { 'Fn::GetAtt': ['ArchiveQueueDlq', 'Arn'] },
+            maxReceiveCount: 3
+          },
           Tags: [
             { Key: 'Project', Value: 'ICEBox' },
             { Key: 'Stage', Value: '${sls:stage}' }

@@ -63,6 +63,15 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const downloadExpiryDate = new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString();
   const s3 = getS3Client();
 
+  const headers = event.headers ?? {};
+  const protocol = (headers['x-forwarded-proto'] ?? headers['X-Forwarded-Proto'] ?? 'https') as string;
+  const stagePath =
+    event.requestContext.stage && event.requestContext.stage !== '$default'
+      ? `/${event.requestContext.stage}`
+      : '';
+  const domainName = event.requestContext.domainName;
+  const downloadBaseUrl = `${protocol}://${domainName}${stagePath}`;
+
   const uploadTargets = await Promise.all(
     sanitizedFiles.map(async (file) => {
       const downloadToken = uuid();
@@ -109,7 +118,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         status: 'PENDING',
         files: filesForStorage,
         studentEmail: studentEmail ?? null,
-        educatorEmails: educatorEmails ?? []
+        educatorEmails: educatorEmails ?? [],
+        downloadBaseUrl
       }
     })
   );

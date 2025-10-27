@@ -1,6 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
+import { SQSClient } from '@aws-sdk/client-sqs';
 import { SESClient } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -12,6 +13,7 @@ let s3Client: S3Client | undefined;
 let sesClient: SESClient | undefined;
 let secretsClient: SecretsManagerClient | undefined;
 let cognitoClient: CognitoIdentityProviderClient | undefined;
+let sqsClient: SQSClient | undefined;
 
 export const getDynamoDbDocumentClient = (): DynamoDBDocumentClient => {
   if (!dynamoDbDocumentClient) {
@@ -49,4 +51,11 @@ export const getCognitoClient = (): CognitoIdentityProviderClient => {
     cognitoClient = new CognitoIdentityProviderClient({ region });
   }
   return cognitoClient;
+};
+
+export const getSqsClient = (): SQSClient => {
+  if (!sqsClient) {
+    sqsClient = new SQSClient({ region });
+  }
+  return sqsClient;
 };

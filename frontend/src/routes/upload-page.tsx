@@ -16,9 +16,10 @@ import {
 import {
   completeUpload,
   createUploadSession,
+  getUploadStatus,
   listPublicCourses,
-  type CompleteUploadResponse,
-  type PublicCourse
+  type PublicCourse,
+  type UploadStatusResponse
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -242,7 +243,7 @@ export const UploadPage = () => {
   const [files, setFiles] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [uploadResult, setUploadResult] = useState<CompleteUploadResponse | null>(null);
+  const [uploadResult, setUploadResult] = useState<UploadStatusResponse | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -290,6 +291,57 @@ export const UploadPage = () => {
     coursesData?.forEach((course) => map.set(course.courseCode, course));
     return map;
   }, [coursesData]);
+
+  const pollSubmissionStatus = useCallback(
+    async (submissionId: string): Promise<UploadStatusResponse> => {
+      const timeoutMs = 5 * 60 * 1000;
+      const intervalMs = 3000;
+      const startedAt = Date.now();
+      let lastErrorMessage: string | null = null;
+
+      while (Date.now() - startedAt < timeoutMs) {
+        let status: UploadStatusResponse | null = null;
+        try {
+          status = await getUploadStatus(submissionId);
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            lastErrorMessage = error.response?.data?.message ?? error.message;
+          } else if (error instanceof Error) {
+            lastErrorMessage = error.message;
+          } else {
+            lastErrorMessage = 'Unknown error while checking upload status.';
+          }
+        }
+
+        if (status) {
+          const currentStatus = status.status;
+          if (currentStatus === 'COMPLETED') {
+            return status;
+          }
+
+          if (currentStatus === 'ARCHIVE_FAILED' || currentStatus === 'ARCHIVE_QUEUE_FAILED') {
+            throw new Error(
+              status.lastError ??
+                'We were unable to process your upload. Please try again or contact support.'
+            );
+          }
+
+          if (status.lastError) {
+            lastErrorMessage = status.lastError;
+          }
+        }
+
+        await new Promise((resolve) => {
+          setTimeout(resolve, intervalMs);
+        });
+      }
+
+      throw new Error(
+        lastErrorMessage ?? 'Timed out while waiting for your upload to finish processing.'
+      );
+    },
+    []
+  );
 
   const selectedCourse = courseLookup.get(form.courseId);
 
@@ -627,13 +679,17 @@ export const UploadPage = () => {
         setStatusMessage('Finalising upload…');
       }
 
-      const completed = await completeUploadMutation.mutateAsync({
+      await completeUploadMutation.mutateAsync({
         submissionId: session.submissionId,
         comment: form.comment.trim() || undefined,
         studentEmail: trimmedStudentEmail || undefined,
         studentName: trimmedStudentName || undefined,
         educatorEmails: educatorEmailsPayload
       });
+
+      setStatusMessage('Processing upload…');
+
+      const completed = await pollSubmissionStatus(session.submissionId);
 
       setUploadResult(completed);
       toast({
@@ -643,10 +699,14 @@ export const UploadPage = () => {
       setFiles([]);
       setStatusMessage(null);
     } catch (error) {
-      const message =
-        axios.isAxiosError(error) && error.response
-          ? error.response.data?.message ?? 'Server returned an error.'
-          : 'Something went wrong while uploading. Please try again.';
+      let message: string;
+      if (axios.isAxiosError(error) && error.response) {
+        message = error.response.data?.message ?? 'Server returned an error.';
+      } else if (error instanceof Error) {
+        message = error.message;
+      } else {
+        message = 'Something went wrong while uploading. Please try again.';
+      }
       toast({
         title: 'Upload failed',
         description: message,
@@ -1051,14 +1111,20 @@ export const UploadPage = () => {
             {uploadResult.files.map((file) => (
               <div key={file.objectKey} className="rounded-md border border-muted bg-background/80 p-3">
                 <p className="text-sm font-medium text-foreground">{file.fileName}</p>
-                <a
-                  className="text-xs text-primary underline underline-offset-2"
-                  href={file.downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Download link
-                </a>
+                {file.downloadUrl ? (
+                  <a
+                    className="text-xs text-primary underline underline-offset-2"
+                    href={file.downloadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Download link
+                  </a>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Download link unavailable. Please contact support.
+                  </p>
+                )}
               </div>
             ))}
           </CardContent>

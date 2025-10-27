@@ -47,14 +47,25 @@ export type CompleteUploadPayload = {
 export type CompleteUploadResponse = {
   submissionId: string;
   status: string;
-  completedAt: string;
+  archiveRequestedAt: string;
+  attributes?: Record<string, unknown>;
+};
+
+export type UploadStatusResponse = {
+  submissionId: string;
+  status: string;
+  createdAt?: string;
+  archiveRequestedAt?: string | null;
+  completedAt?: string | null;
+  lastError?: string | null;
   files: Array<{
-    fileName: string;
+    fileName?: string | null;
     objectKey: string;
-    downloadUrl: string;
+    downloadToken: string;
+    downloadUrl: string | null;
     contentType?: string | null;
     size?: number | null;
-    expiresAt?: string;
+    expiresAt?: string | null;
   }>;
 };
 
@@ -69,6 +80,11 @@ export const completeUpload = async (payload: CompleteUploadPayload) => {
     `/uploads/${submissionId}/complete`,
     rest
   );
+  return data;
+};
+
+export const getUploadStatus = async (submissionId: string) => {
+  const { data } = await api.get<UploadStatusResponse>(`/uploads/${submissionId}`);
   return data;
 };
 
