@@ -29,6 +29,20 @@ type WorkViewedEmailOptions = {
   accessedAtIso: string;
 };
 
+type AdminInviteEmailOptions = {
+  inviteeEmail: string;
+  inviteeName?: string;
+  temporaryPassword: string;
+  portalUrl: string;
+};
+
+type AdminResetPasswordEmailOptions = {
+  inviteeEmail: string;
+  inviteeName?: string;
+  temporaryPassword: string;
+  portalUrl: string;
+};
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, '&amp;')
@@ -130,6 +144,128 @@ const renderFileLinks = (files: EmailLink[]) =>
       `
     )
     .join('');
+
+export const buildAdminInviteEmail = (options: AdminInviteEmailOptions) => {
+  const { inviteeEmail, inviteeName, temporaryPassword, portalUrl } = options;
+
+  return {
+    subject: 'You have been invited to the ICEBox admin portal',
+    html: `
+      <html>
+        <body style="${baseEmailStyles}">
+          <div style="padding: 24px;">
+            <div style="${containerStyles}">
+              <div style="${headerStyles}">
+                <img
+                  src="https://icebox.icecampus.com/icebox_logo.svg"
+                  alt="ICEBox"
+                  style="height:40px; width:auto; display:block; margin:0;"
+                />
+                <h1 style="margin: 12px 0 0; font-size: 24px;">Welcome to ICEBox admin</h1>
+                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">
+                  ${inviteeName ? escapeHtml(inviteeName) : escapeHtml(inviteeEmail)}
+                </p>
+              </div>
+              <div style="${sectionStyles}">
+                <p style="margin: 0 0 16px; color: #CCCCCC; line-height: 1.6;">
+                  You have been granted access to the ICEBox admin console. Use the details below to sign in and finish setting up your account.
+                </p>
+                <div style="margin-bottom: 20px;">
+                  <p style="${detailLabelStyles}">Username</p>
+                  <p style="${detailValueStyles}">${escapeHtml(inviteeEmail)}</p>
+                </div>
+                <div style="margin-bottom: 24px;">
+                  <p style="${detailLabelStyles}">Temporary password</p>
+                  <p style="${detailValueStyles}">${escapeHtml(temporaryPassword)}</p>
+                  <p style="margin: 6px 0 0; color: #CCCCCC; font-size: 13px;">
+                    You&rsquo;ll be asked to choose a new password after your first sign-in.
+                  </p>
+                </div>
+                <a
+                  href="${escapeHtml(portalUrl)}"
+                  style="${buttonLinkStyles}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open admin portal
+                </a>
+                <ul style="margin: 24px 0 0; padding-left: 18px; color: #CCCCCC; font-size: 14px; line-height: 1.6;">
+                  <li>Go to the admin portal using the link above.</li>
+                  <li>Sign in with the username and temporary password provided.</li>
+                  <li>Choose a new password when prompted to complete your setup.</li>
+                </ul>
+              </div>
+              <div style="${footerStyles}">
+                <p style="margin: 0;">If you weren&rsquo;t expecting this invite, please contact the ICEBox team.</p>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+  };
+};
+
+export const buildAdminResetPasswordEmail = (options: AdminResetPasswordEmailOptions) => {
+  const { inviteeEmail, inviteeName, temporaryPassword, portalUrl } = options;
+
+  return {
+    subject: 'Your ICEBox admin password has been reset',
+    html: `
+      <html>
+        <body style="${baseEmailStyles}">
+          <div style="padding: 24px;">
+            <div style="${containerStyles}">
+              <div style="${headerStyles}">
+                <img
+                  src="https://icebox.icecampus.com/icebox_logo.svg"
+                  alt="ICEBox"
+                  style="height:40px; width:auto; display:block; margin:0;"
+                />
+                <h1 style="margin: 12px 0 0; font-size: 24px;">Password reset</h1>
+                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">
+                  ${inviteeName ? escapeHtml(inviteeName) : escapeHtml(inviteeEmail)}
+                </p>
+              </div>
+              <div style="${sectionStyles}">
+                <p style="margin: 0 0 16px; color: #CCCCCC; line-height: 1.6;">
+                  An ICEBox admin has reset your password. Use the temporary details below to sign in and choose a new password.
+                </p>
+                <div style="margin-bottom: 20px;">
+                  <p style="${detailLabelStyles}">Username</p>
+                  <p style="${detailValueStyles}">${escapeHtml(inviteeEmail)}</p>
+                </div>
+                <div style="margin-bottom: 24px;">
+                  <p style="${detailLabelStyles}">Temporary password</p>
+                  <p style="${detailValueStyles}">${escapeHtml(temporaryPassword)}</p>
+                  <p style="margin: 6px 0 0; color: #CCCCCC; font-size: 13px;">
+                    Sign in with this password and follow the prompt to set a new one.
+                  </p>
+                </div>
+                <a
+                  href="${escapeHtml(portalUrl)}"
+                  style="${buttonLinkStyles}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open admin portal
+                </a>
+                <ul style="margin: 24px 0 0; padding-left: 18px; color: #CCCCCC; font-size: 14px; line-height: 1.6;">
+                  <li>Go to the ICEBox admin portal.</li>
+                  <li>Sign in with the username and temporary password above.</li>
+                  <li>Select a new password when prompted.</li>
+                </ul>
+              </div>
+              <div style="${footerStyles}">
+                <p style="margin: 0;">If you didn&rsquo;t request this reset, please contact the ICEBox team immediately.</p>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+  };
+};
 
 export const buildEducatorEmail = (options: EducatorEmailOptions) => {
   const {

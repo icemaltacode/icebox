@@ -26,7 +26,8 @@ const serverlessConfiguration = {
       ADMIN_USER_POOL_ID: { Ref: 'AdminUserPool' } as unknown as string,
       ADMIN_USER_POOL_CLIENT_ID: { Ref: 'AdminUserPoolClient' } as unknown as string,
       ADMIN_USER_POOL_REGION: '${self:provider.region}',
-      ARCHIVE_QUEUE_URL: { Ref: 'ArchiveQueue' } as unknown as string
+      ARCHIVE_QUEUE_URL: { Ref: 'ArchiveQueue' } as unknown as string,
+      ADMIN_PORTAL_URL: '${env:ADMIN_PORTAL_URL, "https://icebox.icecampus.com/admin"}'
     },
     iam: {
       role: {
@@ -46,7 +47,9 @@ const serverlessConfiguration = {
               'cognito-idp:AdminCreateUser',
               'cognito-idp:AdminUpdateUserAttributes',
               'cognito-idp:AdminResetUserPassword',
-              'cognito-idp:AdminDeleteUser'
+              'cognito-idp:AdminDeleteUser',
+              'cognito-idp:AdminGetUser',
+              'cognito-idp:AdminSetUserPassword'
             ],
             Resource: [{ 'Fn::GetAtt': ['AdminUserPool', 'Arn'] }]
           },

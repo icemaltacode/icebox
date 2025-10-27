@@ -14,6 +14,7 @@ export const COURSES_TABLE = getEnv('COURSES_TABLE') as string;
 export const SES_SOURCE_EMAIL = getEnv('SES_SOURCE_EMAIL', false);
 export const SECRETS_PREFIX = getEnv('SECRETS_PREFIX', false);
 export const ARCHIVE_QUEUE_URL = getEnv('ARCHIVE_QUEUE_URL') as string;
+export const ADMIN_PORTAL_URL = getEnv('ADMIN_PORTAL_URL', false) ?? 'https://icebox.icecampus.com/admin';
 
 export const ADMIN_USER_POOL_ID = getEnv('ADMIN_USER_POOL_ID', false);
 export const ADMIN_USER_POOL_CLIENT_ID = getEnv('ADMIN_USER_POOL_CLIENT_ID', false);
