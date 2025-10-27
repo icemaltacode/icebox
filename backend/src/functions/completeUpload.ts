@@ -1,10 +1,22 @@
 import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
 import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SendEmailCommand } from '@aws-sdk/client-ses';
+import { DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { v4 as uuid } from 'uuid';
+import archiver from 'archiver';
+import { PassThrough, Readable } from 'stream';
 
-import { getDynamoDbDocumentClient, getSesClient } from '../lib/aws';
-import { ASSIGNMENTS_TABLE, COURSES_TABLE, SES_SOURCE_EMAIL } from '../lib/env';
+const streamToBuffer = async (stream: Readable): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+};
+
+import { getDynamoDbDocumentClient, getSesClient, getS3Client } from '../lib/aws';
+import { ASSIGNMENTS_BUCKET, ASSIGNMENTS_TABLE, COURSES_TABLE, SES_SOURCE_EMAIL } from '../lib/env';
 import { buildEducatorEmail, buildStudentEmail } from '../lib/emailTemplates';
 
 type CompleteUploadBody = {
@@ -116,6 +128,112 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     };
   });
 
+  const s3 = getS3Client();
+  let finalFiles = filesWithTokens;
+
+const shouldCreateArchive = filesWithTokens.length > 1;
+
+if (shouldCreateArchive) {
+  const archiveKey = `archives/${submissionId}-${Date.now()}.zip`;
+  const archiveToken = uuid();
+
+    try {
+      const passThrough = new PassThrough();
+      const upload = new Upload({
+        client: s3,
+        params: {
+          Bucket: ASSIGNMENTS_BUCKET,
+          Key: archiveKey,
+          Body: passThrough,
+          ContentType: 'application/zip'
+        }
+      });
+
+      const archive = archiver('zip', { zlib: { level: 9 } });
+
+      archive.on('error', (error: Error) => {
+        throw error;
+      });
+
+      archive.pipe(passThrough);
+
+      const hasRootFolders = filesWithTokens.some((file) => (file.fileName ?? file.objectKey).includes('/'));
+      const prefix = hasRootFolders ? submissionId : undefined;
+
+      for (const file of filesWithTokens) {
+        const getObjectResult = await s3.send(
+          new GetObjectCommand({
+            Bucket: ASSIGNMENTS_BUCKET,
+            Key: file.objectKey
+          })
+        );
+
+        const originalName = file.fileName || file.objectKey;
+        const entryName = prefix
+          ? `${prefix}/${originalName}`
+          : originalName;
+        const body = getObjectResult.Body;
+
+        if (!body) {
+          throw new Error(`Empty object body for ${file.objectKey}`);
+        }
+
+        let buffer: Buffer;
+
+        if (body instanceof Readable) {
+          buffer = await streamToBuffer(body);
+        } else if (typeof (body as unknown as ReadableStream).getReader === 'function') {
+          const nodeStream = Readable.fromWeb(body as unknown as ReadableStream);
+          buffer = await streamToBuffer(nodeStream);
+        } else if (body instanceof Blob) {
+          buffer = Buffer.from(await body.arrayBuffer());
+        } else {
+          throw new Error(`Unsupported object body type for ${file.objectKey}`);
+        }
+
+        archive.append(buffer, { name: entryName });
+      }
+
+      const uploadPromise = upload.done();
+      await archive.finalize();
+      await uploadPromise;
+
+      const head = await s3.send(
+        new HeadObjectCommand({ Bucket: ASSIGNMENTS_BUCKET, Key: archiveKey })
+      );
+
+      const archiveSize = head.ContentLength ?? filesWithTokens.reduce((total, file) => total + (file.size ?? 0), 0);
+
+      finalFiles = [
+        {
+          fileName: `${submissionId}.zip`,
+          contentType: 'application/zip',
+          size: archiveSize,
+          objectKey: archiveKey,
+          downloadToken: archiveToken,
+          expiresAt: defaultExpiryDate
+        }
+      ];
+
+      await s3.send(
+        new DeleteObjectsCommand({
+          Bucket: ASSIGNMENTS_BUCKET,
+          Delete: {
+            Objects: filesWithTokens.map((file) => ({ Key: file.objectKey }))
+          }
+        })
+      );
+
+      filesNeedUpdate = true;
+    } catch (error) {
+      console.error('Failed to create archive for submission', { submissionId, error });
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ message: 'Failed to process uploaded files' })
+      };
+    }
+  }
+
   if (filesNeedUpdate) {
     await dynamodb.send(
       new UpdateCommand({
@@ -126,7 +244,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
           '#files': 'files'
         },
         ExpressionAttributeValues: {
-          ':files': filesWithTokens.map((file) => ({
+          ':files': finalFiles.map((file) => ({
             fileName: file.fileName ?? null,
             contentType: file.contentType ?? null,
             size: file.size ?? null,
@@ -164,7 +282,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       ? [courseDetails.educatorEmail]
       : [];
   const courseDisplayName = courseDetails.courseName ? `${courseDetails.courseName} (${courseId})` : courseId;
-  const downloadResources = filesWithTokens.map((file) => {
+  const downloadResources = finalFiles.map((file) => {
     const label = file.fileName ?? file.objectKey;
     return {
       fileName: label,

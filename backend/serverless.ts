@@ -145,6 +145,8 @@ const serverlessConfiguration = {
     },
     completeUpload: {
       handler: 'src/functions/completeUpload.handler',
+      timeout: 120,
+      memorySize: 1536,
       events: [
         {
           httpApi: {

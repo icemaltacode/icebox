@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, type DropEvent } from 'react-dropzone';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   CheckCircle2,
   FolderPlus,
+  Loader2,
   Trash2,
   Upload,
   File as FileIcon
@@ -47,6 +48,99 @@ import {
 
 import type { JSX } from 'react';
 
+type FileSystemEntry = {
+  isFile: boolean;
+  isDirectory: boolean;
+  name: string;
+  fullPath: string;
+  file: (callback: (file: File) => void, errorCallback?: (error: unknown) => void) => void;
+  createReader?: () => FileSystemDirectoryReader;
+  readEntries?: () => void;
+};
+
+type FileSystemDirectoryReader = {
+  readEntries: (
+    successCallback: (entries: FileSystemEntry[]) => void,
+    errorCallback?: (error: unknown) => void
+  ) => void;
+};
+
+const traverseEntry = (entry: FileSystemEntry, path: string): Promise<File[]> =>
+  new Promise((resolve, reject) => {
+    if (entry.isFile) {
+      entry.file(
+        (file) => {
+          const relativePath = `${path}${entry.name}`;
+          Object.defineProperty(file, 'webkitRelativePath', {
+            value: relativePath,
+            configurable: true
+          });
+          resolve([file]);
+        },
+        (error) => reject(error ?? new Error('Failed to read file entry'))
+      );
+    } else if (entry.isDirectory && entry.createReader) {
+      const reader = entry.createReader();
+      const allEntries: FileSystemEntry[] = [];
+
+      const readBatch = () => {
+        reader.readEntries(
+          (batch) => {
+            if (!batch.length) {
+              Promise.all(
+                allEntries.map((child) =>
+                  traverseEntry(child, `${path}${entry.name}/`)
+                )
+              )
+                .then((nested) => resolve(nested.flat()))
+                .catch(reject);
+              return;
+            }
+            allEntries.push(...batch);
+            readBatch();
+          },
+          (error) => reject(error ?? new Error('Failed to read directory entries'))
+        );
+      };
+
+      readBatch();
+    } else {
+      resolve([]);
+    }
+  });
+
+const collectFilesFromEvent = async (event: DropEvent): Promise<File[]> => {
+  const dataTransfer = 'dataTransfer' in event ? event.dataTransfer : null;
+  const items = dataTransfer?.items;
+
+  if (items && items.length > 0) {
+    const entryPromises: Promise<File[]>[] = [];
+    for (const item of Array.from(items)) {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) {
+        entryPromises.push(traverseEntry(entry as FileSystemEntry, ''));
+      } else {
+        const file = item.getAsFile?.();
+        if (file) {
+          entryPromises.push(Promise.resolve([file]));
+        }
+      }
+    }
+
+    if (entryPromises.length > 0) {
+      const files = await Promise.all(entryPromises);
+      return files.flat();
+    }
+  }
+
+  const fileList =
+    ('target' in event && event.target && 'files' in event.target && event.target.files)
+      ? event.target.files
+      : dataTransfer?.files;
+
+  return fileList ? Array.from(fileList) : [];
+};
+
 type UploadStatus = 'pending' | 'uploading' | 'uploaded' | 'error';
 
 type UploadItem = {
@@ -56,6 +150,7 @@ type UploadItem = {
   status: UploadStatus;
   progress: number;
   error?: string;
+  rootKey: string | null;
 };
 
 type UploadFormState = {
@@ -146,6 +241,7 @@ export const UploadPage = () => {
   const [form, setForm] = useState<UploadFormState>(initialFormState);
   const [files, setFiles] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<CompleteUploadResponse | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -224,6 +320,92 @@ export const UploadPage = () => {
     [files]
   );
 
+  const displayEntries = useMemo(() => {
+    type MutableDisplay = {
+      id: string;
+      label: string;
+      status: UploadStatus;
+      progress: number;
+      fileIds: string[];
+      isFolder: boolean;
+      fileCount: number;
+      totalSize: number;
+      processedBytes: number;
+      error?: string;
+      order: number;
+    };
+
+    const groups = new Map<string, MutableDisplay>();
+    let orderCounter = 0;
+
+    const getStatusPriority = (status: UploadStatus) => {
+      switch (status) {
+        case 'error':
+          return 3;
+        case 'uploading':
+          return 2;
+        case 'pending':
+          return 1;
+        case 'uploaded':
+        default:
+          return 0;
+      }
+    };
+
+    const entriesOrder: string[] = [];
+
+    for (const item of files) {
+      const key = item.rootKey ?? item.id;
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          id: key,
+          label: item.rootKey ?? item.file.name,
+          status: item.status,
+          progress: item.progress,
+          fileIds: [],
+          isFolder: Boolean(item.rootKey),
+          fileCount: 0,
+          totalSize: 0,
+          processedBytes: 0,
+          order: orderCounter++
+        };
+        groups.set(key, group);
+        entriesOrder.push(key);
+      }
+
+      group.fileIds.push(item.id);
+      group.fileCount += 1;
+      group.totalSize += item.file.size;
+      group.processedBytes += (item.file.size * item.progress) / 100;
+      if (getStatusPriority(item.status) > getStatusPriority(group.status)) {
+        group.status = item.status;
+        group.progress = item.progress;
+        group.error = item.error;
+      }
+      if (item.status === group.status && item.error && !group.error) {
+        group.error = item.error;
+      }
+    }
+
+    return entriesOrder.map((key) => {
+      const group = groups.get(key)!;
+      const calculatedProgress = group.totalSize > 0 ? Math.min(100, Math.round(group.processedBytes / group.totalSize * 100)) : group.progress;
+      const normalizedStatus: UploadStatus = group.status === 'uploaded' && calculatedProgress < 100 ? 'uploading' : group.status;
+      return {
+        id: group.id,
+        label: group.isFolder ? `Folder: ${group.label}` : group.label,
+        status: normalizedStatus,
+        progress: normalizedStatus === 'uploaded' ? 100 : calculatedProgress,
+        fileIds: group.fileIds,
+        isFolder: group.isFolder,
+        fileCount: group.fileCount,
+        totalSize: group.totalSize,
+        error: group.error
+      };
+    });
+  }, [files]);
+
   const dedupeSignatures = useMemo(
     () =>
       new Set(files.map((item) => `${item.relativePath}-${item.file.size}-${item.file.lastModified}`)),
@@ -236,6 +418,7 @@ export const UploadPage = () => {
       const seen = new Set(dedupeSignatures);
       for (const file of incoming) {
         const relativePath = file.webkitRelativePath || file.name;
+        const rootKey = relativePath.includes('/') ? relativePath.split('/')[0] : null;
         const signature = `${relativePath}-${file.size}-${file.lastModified}`;
         if (seen.has(signature)) {
           continue;
@@ -246,7 +429,8 @@ export const UploadPage = () => {
           file,
           relativePath,
           status: 'pending',
-          progress: 0
+          progress: 0,
+          rootKey
         });
       }
       if (additions.length > 0) {
@@ -267,7 +451,8 @@ export const UploadPage = () => {
     onDrop,
     multiple: true,
     noClick: true,
-    noKeyboard: true
+    noKeyboard: true,
+    getFilesFromEvent: collectFilesFromEvent
   });
 
   const handleFolderSelect = () => folderInputRef.current?.click();
@@ -278,14 +463,16 @@ export const UploadPage = () => {
     event.target.value = '';
   };
 
-  const removeFile = (id: string) => {
-    setFiles((prev) => prev.filter((file) => file.id !== id));
+  const removeFiles = (ids: string[]) => {
+    const idSet = new Set(ids);
+    setFiles((prev) => prev.filter((file) => !idSet.has(file.id)));
   };
 
   const reset = () => {
     setFiles([]);
     setUploadResult(null);
     setForm(initialFormState);
+    setStatusMessage(null);
   };
 
   const setFileState = (id: string, patch: Partial<UploadItem>) => {
@@ -382,6 +569,7 @@ export const UploadPage = () => {
 
     setIsUploading(true);
     setUploadResult(null);
+    setStatusMessage(null);
 
     try {
       const educatorEmailsPayload =
@@ -433,6 +621,12 @@ export const UploadPage = () => {
         }
       }
 
+      if (files.length > 1) {
+        setStatusMessage('Zipping contents…');
+      } else {
+        setStatusMessage('Finalising upload…');
+      }
+
       const completed = await completeUploadMutation.mutateAsync({
         submissionId: session.submissionId,
         comment: form.comment.trim() || undefined,
@@ -447,6 +641,7 @@ export const UploadPage = () => {
         description: 'Your files were uploaded successfully.'
       });
       setFiles([]);
+      setStatusMessage(null);
     } catch (error) {
       const message =
         axios.isAxiosError(error) && error.response
@@ -457,6 +652,7 @@ export const UploadPage = () => {
         description: message,
         variant: 'destructive'
       });
+      setStatusMessage(null);
     } finally {
       setIsUploading(false);
     }
@@ -549,11 +745,11 @@ export const UploadPage = () => {
             </div>
 
             <ul className="space-y-3">
-              {files.map((item) => {
-                const meta = statusMeta[item.status];
+              {displayEntries.map((entry) => {
+                const meta = statusMeta[entry.status];
                 return (
                   <li
-                    key={item.id}
+                    key={entry.id}
                     className={cn(
                       'flex flex-col gap-2 rounded-lg border bg-background/80 p-4 transition-colors',
                       meta.className
@@ -562,9 +758,11 @@ export const UploadPage = () => {
                     <div className="flex items-start justify-between gap-4">
                       <div className="space-y-1">
                         <p className="line-clamp-1 text-sm font-medium text-foreground sm:text-base">
-                          {item.relativePath}
+                          {entry.label}
                         </p>
-                        <p className="text-xs text-muted-foreground">{formatBytes(item.file.size)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {entry.isFolder ? `${entry.fileCount} files` : formatBytes(entry.totalSize)}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs font-medium">
@@ -576,20 +774,22 @@ export const UploadPage = () => {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => removeFile(item.id)}
+                          onClick={() => removeFiles(entry.fileIds)}
                           disabled={isUploading}
                         >
                           <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Remove file</span>
+                          <span className="sr-only">Remove {entry.isFolder ? 'folder' : 'file'}</span>
                         </Button>
                       </div>
                     </div>
-                    <Progress value={item.progress} />
-                    {item.error && <p className="text-xs text-red-500">{item.error}</p>}
+                    <Progress value={entry.progress} />
+                    {entry.status === 'error' && entry.error && (
+                      <p className="text-xs text-red-500">{entry.error}</p>
+                    )}
                   </li>
                 );
               })}
-              {files.length === 0 && (
+              {displayEntries.length === 0 && (
                 <li className="rounded-lg border border-dashed border-border bg-background/60 p-6 text-center text-sm text-muted-foreground">
                   Files you add will appear here with live upload progress.
                 </li>
@@ -600,6 +800,12 @@ export const UploadPage = () => {
             <div className="text-sm text-muted-foreground">
               Upload links are valid for 28 days. Large files may take longer to finish.
             </div>
+            {statusMessage ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{statusMessage}</span>
+              </div>
+            ) : null}
             <div className="flex gap-2">
               <Button type="button" variant="outline" disabled={isUploading || files.length === 0} onClick={reset}>
                 Clear
