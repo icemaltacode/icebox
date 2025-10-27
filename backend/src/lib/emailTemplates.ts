@@ -22,6 +22,13 @@ type StudentEmailOptions = {
   files: EmailLink[];
 };
 
+type WorkViewedEmailOptions = {
+  courseDisplayName: string;
+  studentName?: string;
+  educatorName?: string;
+  accessedAtIso: string;
+};
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, '&amp;')
@@ -229,6 +236,44 @@ export const buildStudentEmail = (options: StudentEmailOptions) => {
                 </ul>
                 <p style="margin: 24px 0 0; color: #CCCCCC; font-size: 14px;">
                   You can revisit these links for the next 28 days. After that, your educator can access the files from ICEBox.
+                </p>
+              </div>
+              <div style="${footerStyles}">
+                <p style="margin: 0;">Delivered by ICEBox — secure student submissions for ICE Campus.</p>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+  };
+};
+
+export const buildWorkViewedEmail = (options: WorkViewedEmailOptions) => {
+  const { courseDisplayName, studentName, educatorName, accessedAtIso } = options;
+  const formattedTimestamp = formatTimestamp(accessedAtIso);
+
+  return {
+    subject: `Your assignment has been accessed — ${escapeHtml(courseDisplayName)}`,
+    html: `
+      <html>
+        <body style="${baseEmailStyles}">
+          <div style="padding: 24px;">
+            <div style="${containerStyles}">
+              <div style="${headerStyles}">
+                <p style="margin: 0; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85;">ICEBox</p>
+                <h1 style="margin: 12px 0 0; font-size: 24px;">Your work has been viewed</h1>
+                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
+              </div>
+              <div style="${sectionStyles}">
+                <p style="margin: 0 0 16px; color: #FFFFFF; font-size: 16px; line-height: 1.6;">
+                  ${studentName ? `Hi ${escapeHtml(studentName)},` : 'Hello,'}
+                </p>
+                <p style="margin: 0 0 16px; color: #FFFFFF; font-size: 16px; line-height: 1.6;">
+                  ${educatorName ? `${escapeHtml(educatorName)} accessed` : 'Your educator accessed'} your assignment submission on ${formattedTimestamp}.
+                </p>
+                <p style="margin: 24px 0 0; color: #CCCCCC; font-size: 14px;">
+                  This is an automated notification to let you know that your work has been downloaded for review.
                 </p>
               </div>
               <div style="${footerStyles}">
