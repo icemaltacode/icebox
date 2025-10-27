@@ -22,7 +22,10 @@ const serverlessConfiguration = {
       ASSIGNMENTS_TABLE: '${self:custom.resources.assignmentsTableName}',
       COURSES_TABLE: '${self:custom.resources.coursesTableName}',
       SES_SOURCE_EMAIL: '${env:SES_SOURCE_EMAIL}',
-      SECRETS_PREFIX: '${env:SECRETS_PREFIX, "/icebox/${sls:stage}/"}'
+      SECRETS_PREFIX: '${env:SECRETS_PREFIX, "/icebox/${sls:stage}/"}',
+      ADMIN_USER_POOL_ID: { Ref: 'AdminUserPool' } as unknown as string,
+      ADMIN_USER_POOL_CLIENT_ID: { Ref: 'AdminUserPoolClient' } as unknown as string,
+      ADMIN_USER_POOL_REGION: '${self:provider.region}'
     },
     iam: {
       role: {
@@ -34,6 +37,17 @@ const serverlessConfiguration = {
               'arn:aws:s3:::${self:custom.resources.assignmentsBucketName}',
               'arn:aws:s3:::${self:custom.resources.assignmentsBucketName}/*'
             ]
+          },
+          {
+            Effect: 'Allow',
+            Action: [
+              'cognito-idp:ListUsers',
+              'cognito-idp:AdminCreateUser',
+              'cognito-idp:AdminUpdateUserAttributes',
+              'cognito-idp:AdminResetUserPassword',
+              'cognito-idp:AdminDeleteUser'
+            ],
+            Resource: [{ 'Fn::GetAtt': ['AdminUserPool', 'Arn'] }]
           },
           {
             Effect: 'Allow',
@@ -50,7 +64,13 @@ const serverlessConfiguration = {
           },
           {
             Effect: 'Allow',
-            Action: ['dynamodb:GetItem'],
+            Action: [
+              'dynamodb:GetItem',
+              'dynamodb:PutItem',
+              'dynamodb:UpdateItem',
+              'dynamodb:DeleteItem',
+              'dynamodb:Scan'
+            ],
             Resource: [{ 'Fn::GetAtt': ['CoursesTable', 'Arn'] }]
           },
           {
@@ -86,7 +106,7 @@ const serverlessConfiguration = {
           'Origin',
           'Accept'
         ],
-        allowedMethods: ['OPTIONS', 'GET', 'POST'],
+        allowedMethods: ['OPTIONS', 'GET', 'POST', 'PUT', 'DELETE'],
         maxAge: 3600
       }
     }
@@ -141,6 +161,105 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/students/{studentId}/submissions'
+          }
+        }
+      ]
+    },
+    adminListCourses: {
+      handler: 'src/functions/admin/listCourses.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'get',
+            path: '/admin/courses'
+          }
+        }
+      ]
+    },
+    adminCreateCourse: {
+      handler: 'src/functions/admin/createCourse.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'post',
+            path: '/admin/courses'
+          }
+        }
+      ]
+    },
+    adminUpdateCourse: {
+      handler: 'src/functions/admin/updateCourse.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'put',
+            path: '/admin/courses/{courseCode}'
+          }
+        }
+      ]
+    },
+    adminDeleteCourse: {
+      handler: 'src/functions/admin/deleteCourse.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'delete',
+            path: '/admin/courses/{courseCode}'
+          }
+        }
+      ]
+    },
+    adminListUsers: {
+      handler: 'src/functions/admin/listAdminUsers.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'get',
+            path: '/admin/users'
+          }
+        }
+      ]
+    },
+    adminInviteUser: {
+      handler: 'src/functions/admin/inviteAdminUser.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'post',
+            path: '/admin/users'
+          }
+        }
+      ]
+    },
+    adminUpdateUser: {
+      handler: 'src/functions/admin/updateAdminUser.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'put',
+            path: '/admin/users/{username}'
+          }
+        }
+      ]
+    },
+    adminResetUserPassword: {
+      handler: 'src/functions/admin/resetAdminUserPassword.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'post',
+            path: '/admin/users/{username}/reset-password'
+          }
+        }
+      ]
+    },
+    adminDeleteUser: {
+      handler: 'src/functions/admin/deleteAdminUser.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'delete',
+            path: '/admin/users/{username}'
           }
         }
       ]
@@ -236,6 +355,69 @@ const serverlessConfiguration = {
             { Key: 'Project', Value: 'ICEBox' },
             { Key: 'Stage', Value: '${sls:stage}' }
           ]
+        }
+      },
+      AdminUserPool: {
+        Type: 'AWS::Cognito::UserPool',
+        Properties: {
+          UserPoolName: '${self:service}-${sls:stage}-admin',
+          MfaConfiguration: 'OFF',
+          UsernameAttributes: ['email'],
+          AutoVerifiedAttributes: ['email'],
+          AdminCreateUserConfig: {
+            AllowAdminCreateUserOnly: true,
+            InviteMessageTemplate: {
+              EmailSubject: 'You have been invited to ICEBox admin',
+              EmailMessage:
+                'Hello,\n\nYou have been invited to the ICEBox admin portal.\n\nUsername: {username}\nTemporary password: {####}\n\nPlease sign in and change your password within 7 days.\n\nThanks,\nICEBox'
+            }
+          },
+          Policies: {
+            PasswordPolicy: {
+              MinimumLength: 12,
+              RequireUppercase: true,
+              RequireLowercase: true,
+              RequireNumbers: true,
+              RequireSymbols: true,
+              TemporaryPasswordValidityDays: 7
+            }
+          },
+          AccountRecoverySetting: {
+            RecoveryMechanisms: [
+              {
+                Name: 'verified_email',
+                Priority: 1
+              }
+            ]
+          },
+          DeletionProtection: 'INACTIVE'
+        }
+      },
+      AdminUserPoolClient: {
+        Type: 'AWS::Cognito::UserPoolClient',
+        Properties: {
+          UserPoolId: { Ref: 'AdminUserPool' },
+          ClientName: 'icebox-${sls:stage}-admin-web',
+          GenerateSecret: false,
+          ExplicitAuthFlows: [
+            'ALLOW_USER_SRP_AUTH',
+            'ALLOW_REFRESH_TOKEN_AUTH',
+            'ALLOW_ADMIN_USER_PASSWORD_AUTH',
+            'ALLOW_CUSTOM_AUTH',
+            'ALLOW_USER_PASSWORD_AUTH'
+          ],
+          PreventUserExistenceErrors: 'ENABLED',
+          RefreshTokenValidity: 30,
+          AccessTokenValidity: 1,
+          IdTokenValidity: 1,
+          TokenValidityUnits: {
+            AccessToken: 'hours',
+            IdToken: 'hours',
+            RefreshToken: 'days'
+          },
+          SupportedIdentityProviders: ['COGNITO'],
+          EnableTokenRevocation: true,
+          AuthSessionValidity: 3
         }
       }
     }

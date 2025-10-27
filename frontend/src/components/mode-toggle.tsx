@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Laptop, MoonStar, SunMedium } from 'lucide-react';
 
 import { useTheme } from './theme-provider';
@@ -6,7 +6,8 @@ import { Button } from './ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger
 } from './ui/dropdown-menu';
 
@@ -37,6 +38,18 @@ export const ModeToggle = () => {
         ? THEME_ICONS.dark
         : THEME_ICONS.light;
 
+  const handleThemeChange = useCallback(
+    (value: string) => {
+      setTheme((current) => {
+        const next = value === 'light' || value === 'dark' || value === 'system' ? value : current;
+        return next === current ? current : next;
+      });
+    },
+    [setTheme]
+  );
+
+  const selectedTheme = useMemo(() => (mounted ? theme : 'system'), [mounted, theme]);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -50,14 +63,16 @@ export const ModeToggle = () => {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
-        {(['light', 'dark', 'system'] as const).map((option) => (
-          <DropdownMenuItem key={option} onClick={() => setTheme(option)}>
-            <div className="flex items-center gap-3">
-              {THEME_ICONS[option]}
-              <span className="text-sm font-medium">{THEME_LABELS[option]}</span>
-            </div>
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuRadioGroup value={selectedTheme} onValueChange={handleThemeChange}>
+          {(['light', 'dark', 'system'] as const).map((option) => (
+            <DropdownMenuRadioItem key={option} value={option}>
+              <div className="flex items-center gap-3">
+                {THEME_ICONS[option]}
+                <span className="text-sm font-medium">{THEME_LABELS[option]}</span>
+              </div>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

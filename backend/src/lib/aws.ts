@@ -2,6 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { SESClient } from '@aws-sdk/client-ses';
+import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
 const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? 'eu-south-1';
@@ -10,6 +11,7 @@ let dynamoDbDocumentClient: DynamoDBDocumentClient | undefined;
 let s3Client: S3Client | undefined;
 let sesClient: SESClient | undefined;
 let secretsClient: SecretsManagerClient | undefined;
+let cognitoClient: CognitoIdentityProviderClient | undefined;
 
 export const getDynamoDbDocumentClient = (): DynamoDBDocumentClient => {
   if (!dynamoDbDocumentClient) {
@@ -40,4 +42,11 @@ export const getSecretsManagerClient = (): SecretsManagerClient => {
     secretsClient = new SecretsManagerClient({ region });
   }
   return secretsClient;
+};
+
+export const getCognitoClient = (): CognitoIdentityProviderClient => {
+  if (!cognitoClient) {
+    cognitoClient = new CognitoIdentityProviderClient({ region });
+  }
+  return cognitoClient;
 };

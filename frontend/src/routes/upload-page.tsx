@@ -52,7 +52,6 @@ type UploadFormState = {
   studentName: string;
   courseId: string;
   studentEmail: string;
-  educatorEmails: string;
   comment: string;
 };
 
@@ -108,7 +107,6 @@ export const UploadPage = () => {
       studentName: studentNameParam,
       courseId: courseCodeParam,
       studentEmail: studentEmailParam,
-      educatorEmails: '',
       comment: ''
     }),
     [courseCodeParam, studentEmailParam, studentNameParam]
@@ -243,14 +241,6 @@ export const UploadPage = () => {
     setIsUploading(true);
     setUploadResult(null);
 
-    const allowManualEducatorInput = !hasPrefilledContext;
-    const educatorEmailList = allowManualEducatorInput
-      ? form.educatorEmails
-          .split(',')
-          .map((email) => email.trim())
-          .filter(Boolean)
-      : [];
-
     try {
       const payload = {
         studentId: form.studentId.trim() || undefined,
@@ -258,7 +248,6 @@ export const UploadPage = () => {
         courseId: trimmedCourseId,
         comment: form.comment.trim() || undefined,
         studentEmail: form.studentEmail.trim() || undefined,
-        educatorEmails: educatorEmailList.length ? educatorEmailList : undefined,
         files: files.map((item) => ({
           fileName: item.relativePath,
           size: item.file.size,
@@ -302,8 +291,7 @@ export const UploadPage = () => {
         submissionId: session.submissionId,
         comment: form.comment.trim() || undefined,
         studentEmail: form.studentEmail.trim() || undefined,
-        studentName: form.studentName.trim() || undefined,
-        educatorEmails: educatorEmailList.length ? educatorEmailList : undefined
+        studentName: form.studentName.trim() || undefined
       });
 
       setUploadResult(completed);
@@ -348,17 +336,17 @@ export const UploadPage = () => {
         <form className="grid gap-6 lg:grid-cols-[2fr,1fr] lg:items-start" onSubmit={onSubmit}>
           <Card
             className={cn(
-              'border-2 border-dashed border-border bg-card/70 shadow-sm transition-colors',
+              'flex flex-col border-2 border-dashed border-border bg-card/70 shadow-sm transition-colors lg:h-full',
               isDragActive && 'border-primary bg-primary/5'
             )}
-        >
+          >
           <CardHeader>
             <CardTitle className="text-xl">Files</CardTitle>
             <CardDescription>
               Drop files anywhere inside this panel or use the buttons to browse.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex-1 space-y-4">
             <div
               {...getRootProps()}
               className={cn(
@@ -476,7 +464,7 @@ export const UploadPage = () => {
           </CardFooter>
           </Card>
 
-          <Card className="bg-card/80 shadow-sm">
+          <Card className="bg-card/80 shadow-sm flex flex-col lg:h-full">
           <CardHeader>
             <CardTitle className="text-xl">Submission details</CardTitle>
             <CardDescription>
@@ -484,7 +472,7 @@ export const UploadPage = () => {
               are needed if everything looks correct.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex-1 space-y-4">
             {hasPrefilledContext ? (
               <div className="space-y-4">
                 <div className="rounded-lg border border-border/80 bg-background/80 p-4">
@@ -558,18 +546,6 @@ export const UploadPage = () => {
                     }
                     placeholder="student@example.edu"
                     type="email"
-                    disabled={isUploading}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="educatorEmails">Extra educator emails (optional)</Label>
-                  <Input
-                    id="educatorEmails"
-                    value={form.educatorEmails}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, educatorEmails: event.target.value }))
-                    }
-                    placeholder="Separate multiple emails with commas"
                     disabled={isUploading}
                   />
                 </div>
