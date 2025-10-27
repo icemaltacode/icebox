@@ -6,7 +6,7 @@ ICEBox is a two-part system that streamlines assignment hand‑offs between stud
 - **Backend** – Serverless Framework service using Lambda, API Gateway (HTTP API), DynamoDB, S3, Cognito, SQS, and SES.
 - **Asynchronous archives** – Uploads finish quickly; an SQS-driven processor zips files, deletes originals, and emails the educator/student when complete.
 
-![Architecture](docs/media/architecture.png) <!-- Replace or remove if no diagram is available -->
+See [Architecture Diagrams](docs/Architecture.md).
 
 ---
 
