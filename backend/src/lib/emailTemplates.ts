@@ -154,7 +154,11 @@ export const buildEducatorEmail = (options: EducatorEmailOptions) => {
           <div style="padding: 24px;">
             <div style="${containerStyles}">
               <div style="${headerStyles}">
-                <p style="margin: 0; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85;">ICEBox</p>
+                <img
+                  src="https://icebox.icecampus.com/icebox_logo.svg"
+                  alt="ICEBox"
+                  style="height:40px; width:auto; display:block; margin:0;"
+                />
                 <h1 style="margin: 12px 0 0; font-size: 24px;">New student submission</h1>
                 <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
               </div>
@@ -220,7 +224,11 @@ export const buildStudentEmail = (options: StudentEmailOptions) => {
           <div style="padding: 24px;">
             <div style="${containerStyles}">
               <div style="${headerStyles}">
-                <p style="margin: 0; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85;">ICEBox</p>
+                <img
+                  src="https://icebox.icecampus.com/icebox_logo.svg"
+                  alt="ICEBox"
+                  style="height:40px; width:auto; display:block; margin:0;"
+                />
                 <h1 style="margin: 12px 0 0; font-size: 24px;">We received your files</h1>
                 <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
               </div>
@@ -261,7 +269,11 @@ export const buildWorkViewedEmail = (options: WorkViewedEmailOptions) => {
           <div style="padding: 24px;">
             <div style="${containerStyles}">
               <div style="${headerStyles}">
-                <p style="margin: 0; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85;">ICEBox</p>
+                <img
+                  src="https://icebox.icecampus.com/icebox_logo.svg"
+                  alt="ICEBox"
+                  style="height:40px; width:auto; display:block; margin:0;"
+                />
                 <h1 style="margin: 12px 0 0; font-size: 24px;">Your work has been viewed</h1>
                 <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
               </div>
