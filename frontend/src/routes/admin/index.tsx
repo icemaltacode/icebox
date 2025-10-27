@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -773,6 +773,8 @@ export const AdminUsersPage = () => {
   const [inviteGivenName, setInviteGivenName] = useState('');
   const [inviteFamilyName, setInviteFamilyName] = useState('');
   const [inviteName, setInviteName] = useState('');
+  const inviteAutoNameRef = useRef('');
+  const inviteNameOverrideRef = useRef(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [editName, setEditName] = useState('');
@@ -807,6 +809,30 @@ export const AdminUsersPage = () => {
       setEditError(null);
     }
   }, [editingUser]);
+
+  useEffect(() => {
+    const trimmedGiven = inviteGivenName.trim();
+    const trimmedFamily = inviteFamilyName.trim();
+    const combined = `${trimmedGiven} ${trimmedFamily}`.replace(/\s+/g, ' ').trim();
+    const previousAuto = inviteAutoNameRef.current.trim();
+    inviteAutoNameRef.current = combined;
+
+    if (!combined) {
+      if (!inviteNameOverrideRef.current && inviteName !== '') {
+        setInviteName('');
+      }
+      return;
+    }
+
+    const currentDisplay = inviteName.trim();
+    const shouldAutofill =
+      !inviteNameOverrideRef.current || currentDisplay === previousAuto;
+
+    if (shouldAutofill && inviteName !== combined) {
+      inviteNameOverrideRef.current = false;
+      setInviteName(combined);
+    }
+  }, [inviteGivenName, inviteFamilyName, inviteName]);
 
   const queryKey = useMemo(
     () => ['admin', 'users', { search: debouncedSearch, token: currentToken, limit }],
@@ -846,6 +872,8 @@ export const AdminUsersPage = () => {
         setInviteGivenName('');
         setInviteFamilyName('');
         setInviteName('');
+        inviteAutoNameRef.current = '';
+        inviteNameOverrideRef.current = false;
         setInviteError(null);
       }
     },
@@ -1017,6 +1045,8 @@ export const AdminUsersPage = () => {
       setInviteGivenName('');
       setInviteFamilyName('');
       setInviteName('');
+      inviteAutoNameRef.current = '';
+      inviteNameOverrideRef.current = false;
     }
   };
 
@@ -1317,7 +1347,11 @@ export const AdminUsersPage = () => {
               <Input
                 id="invite-display-name"
                 value={inviteName}
-                onChange={(event) => setInviteName(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  inviteNameOverrideRef.current = value.trim().length > 0;
+                  setInviteName(value);
+                }}
                 placeholder="e.g. Jane Smith"
               />
             </div>
