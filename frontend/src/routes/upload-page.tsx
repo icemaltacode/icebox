@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useDropzone } from 'react-dropzone';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -15,7 +15,9 @@ import {
 import {
   completeUpload,
   createUploadSession,
-  type CompleteUploadResponse
+  listPublicCourses,
+  type CompleteUploadResponse,
+  type PublicCourse
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -33,6 +35,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
 
 import type { JSX } from 'react';
 
@@ -52,6 +63,7 @@ type UploadFormState = {
   studentName: string;
   courseId: string;
   studentEmail: string;
+  educatorEmail: string;
   comment: string;
 };
 
@@ -97,19 +109,38 @@ const statusMeta: Record<
 
 export const UploadPage = () => {
   const [searchParams] = useSearchParams();
-  const studentEmailParam = searchParams.get('studentEmail') ?? '';
-  const studentNameParam = searchParams.get('studentName') ?? '';
-  const courseCodeParam = searchParams.get('courseCode') ?? '';
+  const decodeParam = (value: string | null): string => {
+    if (!value) {
+      return '';
+    }
+    let decoded = value;
+    try {
+      let next = decodeURIComponent(decoded);
+      while (next !== decoded) {
+        decoded = next;
+        next = decodeURIComponent(decoded);
+      }
+      return decoded;
+    } catch {
+      return decoded;
+    }
+  };
+
+  const studentEmailParam = decodeParam(searchParams.get('studentEmail'));
+  const studentNameParam = decodeParam(searchParams.get('studentName'));
+  const courseCodeParam = decodeParam(searchParams.get('class') ?? searchParams.get('courseCode'));
+  const studentIdParam = decodeParam(searchParams.get('studentId'));
 
   const initialFormState = useMemo<UploadFormState>(
     () => ({
-      studentId: '',
+      studentId: studentIdParam,
       studentName: studentNameParam,
       courseId: courseCodeParam,
       studentEmail: studentEmailParam,
+      educatorEmail: '',
       comment: ''
     }),
-    [courseCodeParam, studentEmailParam, studentNameParam]
+    [courseCodeParam, studentEmailParam, studentIdParam, studentNameParam]
   );
 
   const [form, setForm] = useState<UploadFormState>(initialFormState);
@@ -122,12 +153,70 @@ export const UploadPage = () => {
     setForm(initialFormState);
   }, [initialFormState]);
 
-  const hasPrefilledContext = Boolean(studentEmailParam || studentNameParam || courseCodeParam);
-
   const { toast } = useToast();
 
   const createSessionMutation = useMutation({ mutationFn: createUploadSession });
   const completeUploadMutation = useMutation({ mutationFn: completeUpload });
+
+  const {
+    data: coursesData,
+    isLoading: coursesLoading,
+    isError: coursesError
+  } = useQuery({
+    queryKey: ['publicCourses'],
+    queryFn: listPublicCourses,
+    staleTime: 5 * 60 * 1000
+  });
+
+  const courseGroups = useMemo(() => {
+    if (!coursesData) {
+      return [] as Array<{ name: string; courses: PublicCourse[] }>;
+    }
+    const grouped = new Map<string, PublicCourse[]>();
+    coursesData.forEach((course) => {
+      const name = course.courseName?.trim() || 'Other courses';
+      if (!grouped.has(name)) {
+        grouped.set(name, []);
+      }
+      grouped.get(name)?.push(course);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([name, courses]) => ({
+        name,
+        courses: courses.sort((a, b) => a.courseCode.localeCompare(b.courseCode))
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [coursesData]);
+
+  const courseLookup = useMemo(() => {
+    const map = new Map<string, PublicCourse>();
+    coursesData?.forEach((course) => map.set(course.courseCode, course));
+    return map;
+  }, [coursesData]);
+
+  const selectedCourse = courseLookup.get(form.courseId);
+
+  useEffect(() => {
+    if (selectedCourse && form.educatorEmail) {
+      setForm((prev) => ({ ...prev, educatorEmail: '' }));
+    }
+  }, [selectedCourse, form.educatorEmail]);
+
+  const prefilledStudentName = Boolean(studentNameParam.trim());
+  const prefilledStudentEmail = Boolean(studentEmailParam.trim());
+  const prefilledCourseCode = Boolean(courseCodeParam.trim());
+  const prefilledStudentId = Boolean(studentIdParam.trim());
+
+  const hasPrefilledContext =
+    prefilledStudentName || prefilledStudentEmail || prefilledCourseCode || prefilledStudentId;
+
+  const courseListAvailable = !coursesError && courseGroups.length > 0;
+  const selectValue = selectedCourse ? selectedCourse.courseCode : '';
+  const showCourseDropdown = courseListAvailable && (!prefilledCourseCode || !selectedCourse);
+  const noCoursesConfigured = !coursesError && !coursesLoading && !courseListAvailable;
+  const showManualCourseFields = coursesError || noCoursesConfigured;
+  const courseCodeLabelFor = showManualCourseFields ? 'manualCourseId' : 'courseIdSelect';
 
   const fileCount = files.length;
   const totalSize = useMemo(
@@ -207,18 +296,42 @@ export const UploadPage = () => {
 
   const uploadFiles = async () => {
     const trimmedCourseId = form.courseId.trim();
+    const trimmedStudentName = form.studentName.trim();
+    const trimmedStudentEmail = form.studentEmail.trim();
+    const trimmedStudentId = form.studentId.trim();
+    const trimmedEducatorEmail = form.educatorEmail.trim();
+
     if (!trimmedCourseId) {
       toast({
-        title: 'Missing course',
-        description: 'Course code is required to route your submission.',
+        title: 'Select a course',
+        description: 'Choose the course code so we can route your submission.',
         variant: 'destructive'
       });
       return;
     }
 
-    const hasIdentity = Boolean(
-      form.studentId.trim() || form.studentEmail.trim() || form.studentName.trim()
-    );
+    const requiresManualCourseDetails = coursesError || noCoursesConfigured;
+    const requiresKnownCourseSelection = !requiresManualCourseDetails && !selectedCourse;
+
+    if (!trimmedStudentName) {
+      toast({
+        title: 'Student name required',
+        description: 'Add the student name so we know who submitted this work.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!trimmedStudentEmail) {
+      toast({
+        title: 'Student email required',
+        description: 'Add the student email address so we can send confirmation messages.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const hasIdentity = Boolean(trimmedStudentId || trimmedStudentEmail || trimmedStudentName);
 
     if (!hasIdentity) {
       toast({
@@ -238,16 +351,49 @@ export const UploadPage = () => {
       return;
     }
 
+    if (requiresKnownCourseSelection) {
+      toast({
+        title: 'Choose a course',
+        description: 'Select a course from the list so we can route your submission correctly.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (requiresManualCourseDetails) {
+      if (!trimmedCourseId) {
+        toast({
+          title: 'Course code required',
+          description: 'Enter the course code so we can route your submission.',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (!trimmedEducatorEmail) {
+        toast({
+          title: 'Educator email required',
+          description: 'Provide the educator’s email so we know who should receive the files.',
+          variant: 'destructive'
+        });
+        return;
+      }
+    }
+
     setIsUploading(true);
     setUploadResult(null);
 
     try {
+      const educatorEmailsPayload =
+        requiresManualCourseDetails && trimmedEducatorEmail ? [trimmedEducatorEmail] : undefined;
+
       const payload = {
-        studentId: form.studentId.trim() || undefined,
-        studentName: form.studentName.trim() || undefined,
+        studentId: trimmedStudentId || undefined,
+        studentName: trimmedStudentName || undefined,
         courseId: trimmedCourseId,
         comment: form.comment.trim() || undefined,
-        studentEmail: form.studentEmail.trim() || undefined,
+        studentEmail: trimmedStudentEmail || undefined,
+        educatorEmails: educatorEmailsPayload,
         files: files.map((item) => ({
           fileName: item.relativePath,
           size: item.file.size,
@@ -290,8 +436,9 @@ export const UploadPage = () => {
       const completed = await completeUploadMutation.mutateAsync({
         submissionId: session.submissionId,
         comment: form.comment.trim() || undefined,
-        studentEmail: form.studentEmail.trim() || undefined,
-        studentName: form.studentName.trim() || undefined
+        studentEmail: trimmedStudentEmail || undefined,
+        studentName: trimmedStudentName || undefined,
+        educatorEmails: educatorEmailsPayload
       });
 
       setUploadResult(completed);
@@ -473,84 +620,202 @@ export const UploadPage = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1 space-y-4">
-            {hasPrefilledContext ? (
+            {hasPrefilledContext && (
               <div className="space-y-4">
-                <div className="rounded-lg border border-border/80 bg-background/80 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Student
-                  </p>
-                  <p className="mt-2 text-lg font-semibold">
-                    {form.studentName || form.studentEmail || 'Student details provided'}
-                  </p>
-                  <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    {form.studentEmail && <p>{form.studentEmail}</p>}
-                    {form.studentId && <p>ID: {form.studentId}</p>}
+                {(prefilledStudentName || prefilledStudentEmail || prefilledStudentId) && (
+                  <div className="rounded-lg border border-border/80 bg-background/80 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Student
+                    </p>
+                    <p className="mt-2 text-lg font-semibold">
+                      {form.studentName || form.studentEmail || 'Student details provided'}
+                    </p>
+                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                      {form.studentEmail && <p>{form.studentEmail}</p>}
+                      {form.studentId && <p>ID: {form.studentId}</p>}
+                    </div>
                   </div>
-                </div>
-                <div className="rounded-lg border border-border/80 bg-background/80 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Course
-                  </p>
-                  <p className="mt-2 text-lg font-semibold">{form.courseId}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Files are routed to the assigned educator for this course automatically.
-                  </p>
-                </div>
+                )}
+                {prefilledCourseCode && (
+                  <div className="rounded-lg border border-border/80 bg-background/80 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Course
+                    </p>
+                    <p className="mt-2 text-lg font-semibold">{form.courseId || 'Not provided'}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {selectedCourse
+                        ? `Files are routed to ${selectedCourse.educatorName ?? 'the assigned educator'} automatically.`
+                        : 'We couldn’t match this course in our records. Please confirm the details below.'}
+                    </p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="studentName">Student name (optional)</Label>
-                  <Input
-                    id="studentName"
-                    value={form.studentName}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, studentName: event.target.value }))
-                    }
-                    placeholder="e.g. Jordan Lee"
-                    disabled={isUploading}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="studentId">Student ID (optional)</Label>
-                  <Input
-                    id="studentId"
-                    value={form.studentId}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, studentId: event.target.value }))
-                    }
-                    placeholder="e.g. S123456"
-                    disabled={isUploading}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="courseId">Course code</Label>
-                  <Input
-                    id="courseId"
-                    value={form.courseId}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, courseId: event.target.value }))
-                    }
-                    placeholder="e.g. NOV25-PYTHON"
-                    disabled={isUploading}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="studentEmail">Student email (optional)</Label>
-                  <Input
-                    id="studentEmail"
-                    value={form.studentEmail}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, studentEmail: event.target.value }))
-                    }
-                    placeholder="student@example.edu"
-                    type="email"
-                    disabled={isUploading}
-                  />
-                </div>
-              </>
             )}
+
+            {!prefilledStudentName && (
+              <div className="space-y-2">
+                <Label htmlFor="studentName">
+                  Student name <span className="text-destructive" aria-hidden="true">*</span>
+                </Label>
+                <Input
+                  id="studentName"
+                  value={form.studentName}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, studentName: event.target.value }))
+                  }
+                  placeholder="e.g. Jordan Lee"
+                  disabled={isUploading}
+                  required
+                  aria-required="true"
+                  autoComplete="name"
+                />
+              </div>
+            )}
+
+            {!prefilledStudentEmail && (
+              <div className="space-y-2">
+                <Label htmlFor="studentEmail">
+                  Student email <span className="text-destructive" aria-hidden="true">*</span>
+                </Label>
+                <Input
+                  id="studentEmail"
+                  value={form.studentEmail}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, studentEmail: event.target.value }))
+                  }
+                  placeholder="student@example.edu"
+                  type="email"
+                  disabled={isUploading}
+                  required
+                  aria-required="true"
+                  autoComplete="email"
+                />
+              </div>
+            )}
+
+            {(!prefilledCourseCode || !selectedCourse) && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label
+                    className="text-sm font-medium text-foreground"
+                    htmlFor={courseCodeLabelFor}
+                  >
+                    Course code <span className="text-destructive" aria-hidden="true">*</span>
+                  </Label>
+                  {coursesLoading && !coursesError && (
+                    <span className="text-xs text-muted-foreground">Loading…</span>
+                  )}
+                </div>
+
+                {showCourseDropdown && (
+                  <Select
+                    value={selectValue}
+                    onValueChange={(value) =>
+                      setForm((prev) => ({ ...prev, courseId: value, educatorEmail: '' }))
+                    }
+                    disabled={isUploading}
+                  >
+                    <SelectTrigger id="courseIdSelect" aria-label="Course code">
+                      <SelectValue placeholder="Select a course code" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {courseGroups.map(({ name, courses }) => (
+                        <SelectGroup key={name}>
+                          <SelectLabel>{name}</SelectLabel>
+                          {courses.map((course) => (
+                            <SelectItem key={course.courseCode} value={course.courseCode}>
+                              {course.courseCode}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {!coursesError && !coursesLoading && !courseListAvailable && (
+                  <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    No courses are configured yet. Enter the course details manually below.
+                  </div>
+                )}
+
+                {selectedCourse?.courseName && (
+                  <p className="text-xs text-muted-foreground">
+                    {selectedCourse.courseName}
+                    {selectedCourse.educatorName ? ` · Educator: ${selectedCourse.educatorName}` : ''}
+                  </p>
+                )}
+
+                {prefilledCourseCode && !selectedCourse && !coursesLoading && !coursesError && (
+                  <div className="rounded-md border border-amber-400/60 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:border-amber-400/60 dark:bg-amber-400/10 dark:text-amber-300">
+                    We couldn&rsquo;t find a saved course for &ldquo;{form.courseId}&rdquo;. Please choose from the list below.
+                  </div>
+                )}
+
+                {coursesError && (
+                  <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    We couldn&rsquo;t load the course list. Enter the course code and educator email manually.
+                  </div>
+                )}
+
+                {showManualCourseFields && (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Input
+                        id="manualCourseId"
+                        value={form.courseId}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            courseId: event.target.value.toUpperCase()
+                          }))
+                        }
+                        placeholder="e.g. NOV25-PYTHON"
+                        disabled={isUploading}
+                        required
+                        aria-required="true"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="educatorEmail">
+                        Educator email <span className="text-destructive" aria-hidden="true">*</span>
+                      </Label>
+                      <Input
+                        id="educatorEmail"
+                        type="email"
+                        value={form.educatorEmail}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, educatorEmail: event.target.value }))
+                        }
+                        placeholder="educator@example.com"
+                        disabled={isUploading}
+                        required
+                        aria-required="true"
+                        autoComplete="email"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!prefilledStudentId && (
+              <div className="space-y-2">
+                <Label htmlFor="studentId">Student ID (optional)</Label>
+                <Input
+                  id="studentId"
+                  value={form.studentId}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, studentId: event.target.value }))
+                  }
+                  placeholder="e.g. S123456"
+                  disabled={isUploading}
+                  autoComplete="off"
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="comment">Notes for your educator</Label>
               <Textarea

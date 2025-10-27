@@ -1,5 +1,4 @@
-// icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID
-
+// https://icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID&studentName=PLACEHOLDER_NAME
 
 (() => {
   const SEL = 'a[href*="studentEmail=PLACEHOLDER_EMAIL"][href*="class=PLACEHOLDER_CLASS"]';
@@ -21,11 +20,9 @@
     } catch { return null; }
   };
 
-  const getStudentId = () => {
-    try {
-      return JSON.parse(localStorage.getItem('V1-PunditUserContext') || 'null')
-        ?.current_user?.public_uid || null;
-    } catch { return null; }
+  const getUserContext = () => {
+    try { return JSON.parse(localStorage.getItem('V1-PunditUserContext') || 'null') || {}; }
+    catch { return {}; }
   };
 
   const update = () => {
@@ -33,7 +30,9 @@
 
     const email = getEmail();
     const cls = getClassSlug();
-    const studentId = getStudentId();
+    const ctx = getUserContext();
+    const studentId = ctx?.current_user?.public_uid || null;
+    const studentName = ctx?.current_user?.name || null;
 
     if (!email || !cls) {
       console.log('[Icebox Link Updater] Waiting: email or class not ready.');
@@ -51,11 +50,8 @@
         const u = new URL(a.href, location.href);
         u.searchParams.set('studentEmail', encodeURIComponent(email));
         u.searchParams.set('class', encodeURIComponent(cls));
-        if (studentId) {
-          u.searchParams.set('studentId', encodeURIComponent(studentId));
-        } else {
-          console.log('[Icebox Link Updater] Note: studentId not available yet.');
-        }
+        if (studentId) u.searchParams.set('studentId', encodeURIComponent(studentId));
+        if (studentName) u.searchParams.set('studentName', encodeURIComponent(studentName));
         a.href = u.toString();
         console.log('[Icebox Link Updater] Updated link →', a.href);
       } catch (e) {
@@ -71,18 +67,10 @@
   };
 
   console.log('[Icebox Link Updater] Initialising…');
-
-  // Try now (if script is at end of body)
   update();
-
-  // Retry every 500ms for up to 10s
   tid = setInterval(() => { if (update()) clearInterval(tid); }, 500);
   setTimeout(() => clearInterval(tid), 10000);
-
-  // Watch for dynamic DOM injections
   observer = new MutationObserver(() => update());
   observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  // Fallback when everything is fully loaded
   window.addEventListener('load', update);
 })();

@@ -79,3 +79,15 @@ export const listStudentSubmissions = async (studentId: string, courseId?: strin
   );
   return data.items;
 };
+
+export type PublicCourse = {
+  courseCode: string;
+  courseName?: string;
+  educatorName?: string;
+  educatorEmail?: string;
+};
+
+export const listPublicCourses = async (): Promise<PublicCourse[]> => {
+  const { data } = await api.get<{ items: PublicCourse[] }>('/courses');
+  return data.items;
+};

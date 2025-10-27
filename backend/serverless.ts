@@ -264,6 +264,17 @@ const serverlessConfiguration = {
         }
       ]
     },
+    listPublicCourses: {
+      handler: 'src/functions/listPublicCourses.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'get',
+            path: '/courses'
+          }
+        }
+      ]
+    },
     getDownloadUrl: {
       handler: 'src/functions/getDownloadUrl.handler',
       events: [
