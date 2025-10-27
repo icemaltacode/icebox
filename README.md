@@ -226,4 +226,4 @@ See [`docs/deploy.md`](docs/deploy.md) for an end-to-end production rollout cove
 
 ## Licence
 
-ICEBox is released under the ISC licence – see [`LICENCE`](LICENCE) for details.
+ICEBox is released under the GNU AFFERO GENERAL PUBLIC LICENSE licence – see [`LICENCE`](LICENCE) for details.
