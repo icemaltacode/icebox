@@ -13,7 +13,7 @@ const serverlessConfiguration = {
     runtime: 'nodejs20.x',
     profile: 'ice',
     stage,
-    region: '${opt:region, env:AWS_REGION, "eu-south-1"}',
+    region: ('${opt:region, env:AWS_REGION, "eu-south-1"}' as unknown) as AWS['provider']['region'],
     environment: {
       NODE_OPTIONS: '--enable-source-maps',
       AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
@@ -344,7 +344,8 @@ const serverlessConfiguration = {
                     StorageClass: 'GLACIER',
                     TransitionInDays: 30
                   }
-                ]
+                ],
+                ExpirationInDays: 180
               }
             ]
           },

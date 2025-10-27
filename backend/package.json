@@ -6,8 +6,10 @@
   "scripts": {
     "build": "serverless package",
     "deploy": "serverless deploy",
-    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:dev": "dotenv -e .env.dev -- serverless deploy --stage dev",
     "remove:dev": "serverless remove --stage dev",
+    "deploy:prod": "dotenv -e .env.prod -- serverless deploy --stage prod",
+    "remove:prod": "serverless remove --stage prod",
     "lint": "tsc --noEmit"
   },
   "keywords": [],
@@ -15,9 +17,11 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@serverless/typescript": "^4.20.2",
     "@types/archiver": "^6.0.4",
     "@types/aws-lambda": "^8.10.156",
     "@types/node": "^24.9.1",
+    "dotenv-cli": "^10.0.0",
     "serverless": "^4.22.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
@@ -26,9 +30,9 @@
     "@aws-sdk/client-cognito-identity-provider": "^3.917.0",
     "@aws-sdk/client-dynamodb": "^3.917.0",
     "@aws-sdk/client-s3": "^3.917.0",
-    "@aws-sdk/client-sqs": "^3.917.0",
     "@aws-sdk/client-secrets-manager": "^3.917.0",
     "@aws-sdk/client-ses": "^3.917.0",
+    "@aws-sdk/client-sqs": "^3.917.0",
     "@aws-sdk/lib-dynamodb": "^3.917.0",
     "@aws-sdk/lib-storage": "^3.917.0",
     "@aws-sdk/s3-request-presigner": "^3.917.0",

@@ -1,98 +1,229 @@
 # ICEBox
 
-ICEBox is a monorepo that combines a React front-end with an AWS Serverless back-end to streamline the submission, storage, and retrieval of student coursework. Students upload assignment folders through the web interface, while the back-end provisions secure pre-signed upload targets, persists metadata, notifies educators, and now ships with an invite-only admin area for course management.
+ICEBox is a two-part system that streamlines assignment hand‑offs between students and educators. The React front-end provides the upload and admin experiences, while a Serverless back-end on AWS handles secure storage, background zipping, notifications, and admin management.
+
+- **Frontend** – Vite + React app with a student upload flow, rich public course search, and an invite-only admin area.
+- **Backend** – Serverless Framework service using Lambda, API Gateway (HTTP API), DynamoDB, S3, Cognito, SQS, and SES.
+- **Asynchronous archives** – Uploads finish quickly; an SQS-driven processor zips files, deletes originals, and emails the educator/student when complete.
+
+![Architecture](docs/media/architecture.png) <!-- Replace or remove if no diagram is available -->
+
+---
+
+## Repository layout
+
+| Path        | Description                                                            |
+|-------------|------------------------------------------------------------------------|
+| `frontend/` | Vite + React application (student upload UI and admin console)         |
+| `backend/`  | Serverless service with TypeScript Lambda handlers                     |
+| `docs/`     | Additional documentation (e.g., `docs/deploy.md`)                      |
+| `integration/` | Integration helpers/scripts (if any future automation is added)    |
+
+---
 
 ## Features
-- Student-facing upload flow built with Vite, React, and the TanStack query cache
-- Invite-only admin console for assigning educators to courses and managing admin access (Cognito + React)
-- Serverless API backed by AWS Lambda, API Gateway, DynamoDB, S3, SES, Cognito, and Secrets Manager
-- Pre-signed upload sessions that keep large file transfers off the API tier
-- Email notifications and download links that expire automatically for better security
 
-## Repository Structure
-- `frontend/` – Vite + React application, Tailwind UI primitives, API client
-- `backend/` – Serverless Framework service with Lambda handlers under `src/functions`
-- `src/` – Reserved for future shared libraries between packages
+- Drag-and-drop uploads with folder support and consolidated progress indicators.
+- Asynchronous archive creation (zip + cleanup) processed via SQS/Lambda to avoid API timeouts.
+- HTML email templates (SES) for educator, student, and admin communications.
+- Invite-only admin portal backed by Cognito with user management (invite, edit, reset password, delete).
+- Course assignment CRUD with search, sort, pagination, and guard rails for deleting.
+- S3 lifecycle management: transition uploads to Glacier after 30 days, purge after 180.
+- Front-end theme controls, reusable UI primitives, and course dropdowns populated from DynamoDB.
+
+---
 
 ## Prerequisites
-- Node.js 20.x (aligns with the Lambda runtime configured in `serverless.ts`)
-- npm 9+ (or your preferred package manager) available on your PATH
-- AWS credentials with permissions to deploy the Serverless stack (for back-end work)
-- Serverless Framework CLI (`npm install -g serverless`) if you plan to deploy
 
-## Getting Started
-Install dependencies for the two workspaces:
+- **Node.js 20.x** (aligned with Lambda runtime) and **npm 9+**
+- **AWS CLI** and credentials with permissions to deploy serverless stacks, create S3 buckets, CloudFront distributions, ACM certificates, etc.
+- **Serverless Framework CLI** (`npm install -g serverless`) if deploying manually
+- **dotenv-cli** is installed as a dev dependency in both apps for loading stage-specific env files.
+
+---
+
+## Getting started (local development)
+
+### 1. Clone and install
 
 ```bash
+git clone <repo-url>
+cd ICEBox
+
+# Front-end
 cd frontend
 npm install
 
+# Back-end
 cd ../backend
 npm install
 ```
 
-### Front-end
-1. Create a `.env` file in `frontend/` with the API endpoint you want to target:
-   ```bash
-   VITE_API_BASE_URL="https://your-api.example.com"
-   VITE_ADMIN_USER_POOL_ID="eu-south-1_XXXXXXXXX"
-   VITE_ADMIN_USER_POOL_CLIENT_ID="yourWebClientId"
-   # Optional override – defaults to the region embedded in the pool id
-   VITE_ADMIN_USER_POOL_REGION="eu-south-1"
-   ```
-2. Start the development server:
-   ```bash
-   npm run dev
-   ```
-3. Open the URL printed by Vite (defaults to `http://localhost:5173`).
+### 2. Configure environment variables
 
-Linting and production build commands:
-```bash
-npm run lint
-npm run build
+#### Backend (`backend/.env.dev`)
+
+Copy or create `.env.dev` with values like:
+
+```
+AWS_REGION=eu-south-1
+STAGE=dev
+SES_SOURCE_EMAIL=verified-sender@example.com
+ASSIGNMENTS_BUCKET=icebox-dev-assignments
+ASSIGNMENTS_TABLE=icebox-dev-metadata
+COURSES_TABLE=icebox-dev-courses
+SECRETS_PREFIX=/icebox/dev/
+ADMIN_PORTAL_URL=http://localhost:5173/admin   # optional override
 ```
 
+For other stages create `.env.<stage>` (e.g., `.env.prod`) and the deploy scripts will load them automatically.
+
+#### Frontend (`frontend/.env.local`)
+
+Create `.env.local` for local dev:
+
+```
+VITE_API_BASE_URL=http://localhost:3000    # or deployed dev API
+VITE_ADMIN_USER_POOL_ID=eu-south-1_XXXXX
+VITE_ADMIN_USER_POOL_CLIENT_ID=XXXXXXXX
+VITE_ADMIN_USER_POOL_REGION=eu-south-1
+```
+
+For production builds use `.env.prod` (see deployment section).
+
+### 3. Run the dev servers
+
+```bash
+# Back-end (invoke or deploy to dev)
+cd backend
+npm run lint         # Type-check Lambda handlers
+npm run deploy:dev   # Deploy to dev (loads .env.dev automatically)
+
+# Front-end
+cd ../frontend
+npm run dev          # Start Vite dev server on http://localhost:5173
+```
+
+---
+
+## Deployment summary
+
+A full production deployment involves publishing both the Serverless stack and the static front-end. A detailed step-by-step guide lives in [`docs/deploy.md`](docs/deploy.md). Below is the high-level flow.
+
 ### Back-end
-The back-end is deployed with the Serverless Framework and bundles TypeScript Lambda handlers.
 
 ```bash
 cd backend
-npm install
-npm run lint        # Type check without emitting files
-npm run deploy:dev  # Deploy to the "dev" stage (requires AWS credentials)
+cp .env.dev .env.prod   # adjust values for prod
+npm run deploy:prod     # dotenv-cli loads .env.prod then runs serverless deploy --stage prod
 ```
 
-Deployment relies on several environment variables (the Cognito values are injected automatically from CloudFormation, but are required if you invoke handlers locally):
+This provisions/updates S3 buckets, DynamoDB tables, SQS queues, Lambda functions, Cognito resources, and API Gateway routes for the `prod` stage.
 
-- `SES_SOURCE_EMAIL` – Verified SES identity used when emailing educators
-- `SECRETS_PREFIX` – Optional custom prefix for AWS Secrets Manager keys
-- `ADMIN_USER_POOL_ID` – Cognito User Pool ID used for admin authentication
-- `ADMIN_USER_POOL_CLIENT_ID` – Cognito app client id for the admin web application
-- `ADMIN_USER_POOL_REGION` – Region for the Cognito User Pool (defaults to the Lambda region)
-- `ADMIN_USER_POOL_AUDIENCE` – Optional override for expected JWT audience (defaults to the client id)
-- `SERVERLESS_ORG` / `SERVERLESS_APP` (or CLI flags) if you use an alternative Serverless org/app
+### Front-end
 
-The stack provisions:
-- S3 bucket for uploaded assignment artifacts (`icebox-<stage>-assignments`)
-- DynamoDB tables for submission metadata and course lookups
-- Cognito User Pool and web client for invite-only admin access
-- HTTP API routes for creating upload sessions, finalising uploads, listing submissions, and generating download URLs
-- Admin HTTP API routes for listing, creating, updating, and deleting course assignments
+Host the built assets in an S3 bucket fronted by CloudFront with an ACM certificate (us-east-1) for `https://icebox.icecampus.com`. Once the bucket and distribution exist:
 
-### Local Invocation
-For quick handler tests you can use `serverless invoke local --function <name>` from the `backend/` directory after building.
+```bash
+cd frontend
+cp .env.local .env.prod            # update with prod endpoints & user pool ids
+npm run deploy:prod                # builds, syncs dist/ to S3, invalidates CloudFront
+```
 
-## Admin onboarding
+Refer to [`docs/deploy.md`](docs/deploy.md) for certificate creation, CloudFront configuration, DNS, and GitHub Actions automation.
 
-1. Deploy the updated stack so the Cognito resources are created.
-2. Invite admins through the Cognito console or CLI (`aws cognito-idp admin-create-user`) to send a temporary password email.
-3. Share the front-end environment variables above with the admin front-end so the `/admin` route can authenticate against the pool.
-4. Admins sign in at `/admin`, complete the new password challenge, and manage course assignments (search, sort, paginate, edit, delete) as well as invite additional admins via `/admin/users`.
+---
+
+## Environment variables reference
+
+### Backend
+
+| Key                     | Description                                                                                               |
+|-------------------------|-----------------------------------------------------------------------------------------------------------|
+| `AWS_REGION`            | Deploy region (defaults to `eu-south-1` if not provided)                                                  |
+| `STAGE`                 | Serverless stage (e.g., `dev`, `prod`)                                                                    |
+| `SES_SOURCE_EMAIL`      | Verified SES identity for outbound emails                                                                 |
+| `ASSIGNMENTS_BUCKET`    | Name of the S3 bucket for uploads (usually `icebox-<stage>-assignments`)                                  |
+| `ASSIGNMENTS_TABLE`     | DynamoDB table for submission metadata                                                                    |
+| `COURSES_TABLE`         | DynamoDB table for course assignments                                                                     |
+| `SECRETS_PREFIX`        | Optional Secrets Manager prefix (defaults to `/icebox/<stage>/`)                                          |
+| `ADMIN_PORTAL_URL`      | URL rendered in admin invite/reset emails (defaults to `https://icebox.icecampus.com/admin`)              |
+| `SERVERLESS_ORG/APP`    | Override Serverless org/app if you use a different Org/App                                               |
+| Cognito env vars        | Injected automatically from CloudFormation (User Pool ID, Client ID, Region, Audience)                    |
+
+### Frontend
+
+| Key                               | Description                                                          |
+|-----------------------------------|----------------------------------------------------------------------|
+| `VITE_API_BASE_URL`               | Base URL for the API Gateway stage                                   |
+| `VITE_ADMIN_USER_POOL_ID`         | Cognito User Pool ID for admin authentication                        |
+| `VITE_ADMIN_USER_POOL_CLIENT_ID`  | Cognito app client id                                                |
+| `VITE_ADMIN_USER_POOL_REGION`     | Cognito region (optional if same as pool id prefix)                  |
+
+---
+
+## Development tasks
+
+- **Type checking** – `npm run lint` in both `backend/` and `frontend/`.
+- **React app build** – `npm run build` (or `npm run build:prod`) in `frontend/`.
+- **Serverless invoke** – `serverless invoke local --function <name>` for local handler tests after building.
+- **Archive processor testing** – upload multiple files and confirm the UI polls until status is `COMPLETED`; monitor the `processUploadArchive` Lambda logs in CloudWatch.
+
+---
+
+## Admin portal highlights
+
+- Invite admins via the `/admin/users` page.
+- Display names auto-fill from given/family names but remain editable.
+- Admin invites and password resets send HTML email via SES with the shared design.
+- Resetting an admin password generates a new temporary password, emails the admin, and enforces a new password on next login.
+- Status badges reflect Cognito state (e.g., `CONFIRMED`, `FORCE_CHANGE_PASSWORD` shown as “Temp Password”, `UNCONFIRMED`).
+
+---
+
+## Upload flow (student-facing)
+
+1. Student arrives via a URL that may prefill query parameters (`studentEmail`, `studentName`, `class`, `studentId`).
+2. Required fields adjust dynamically:
+   - Prefilled data hides redundant inputs.
+   - Missing parameters require manual entry.
+   - Course codes populate from public courses (grouped by course name); unknown codes prompt a dropdown with warnings.
+3. Files can be dropped individually or as folders; UI groups folder uploads into a single progress row.
+4. After uploads complete, the API returns `PENDING_ARCHIVE` and the frontend polls `/uploads/{submissionId}` until `COMPLETED`.
+5. Once archived, the UI reveals the download link(s); educator/student emails contain matching links.
+
+---
+
+## Testing & monitoring checklist
+
+- Upload flow with single and multiple files.
+- Admin invite, edit, reset password, delete actions.
+- Queue processing & DLQ (CloudWatch alarms recommended).
+- SES bounce complaints (monitor in the SES console).
+- CloudFront cache invalidations after deployments.
+
+---
+
+## Deployment playbook
+
+See [`docs/deploy.md`](docs/deploy.md) for an end-to-end production rollout covering:
+- ACM certificate creation and validation
+- S3 + CloudFront configuration with custom domain
+- DNS updates
+- Back-end and front-end deploy commands
+- Optional GitHub Actions automation
+- Post-deployment smoke tests
+
+---
 
 ## Contributing
-1. Branch from `main` and keep changes scoped.
-2. Run the relevant lint/build commands before raising a PR.
-3. Update documentation (including this README) when behaviour changes.
+
+1. Branch from `main`, keep PRs focused.
+2. Run `npm run lint` in `backend/` and `frontend/` before pushing.
+3. Update documentation (especially this README and `docs/`) if behaviour or env requirements change.
+
+---
 
 ## Licence
-This project is released under the ISC licence. See `LICENCE` for details.
+
+ICEBox is released under the ISC licence – see [`LICENCE`](LICENCE) for details.

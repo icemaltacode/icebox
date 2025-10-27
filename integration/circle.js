@@ -1,4 +1,16 @@
-// https://icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID&studentName=PLACEHOLDER_NAME
+/*
+  Circle -> ICEBox Adapter
+  This script updates ICEBox links in Circle pages by replacing placeholder
+  parameters with actual user and class data retrieved from localStorage and sessionStorage.
+
+  Usage:
+  1. Include this script in the SITE settings in Circle.
+  2. Ensure that the ICEBox links contain the following placeholders in their href attributes:
+
+  https://icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID&studentName=PLACEHOLDER_NAME
+*/
+
+/* Script starts here. Copy as-is - do not add <script> tags */
 
 (() => {
   const SEL = 'a[href*="studentEmail=PLACEHOLDER_EMAIL"][href*="class=PLACEHOLDER_CLASS"]';
