@@ -27,7 +27,9 @@ const serverlessConfiguration = {
       ADMIN_USER_POOL_CLIENT_ID: { Ref: 'AdminUserPoolClient' } as unknown as string,
       ADMIN_USER_POOL_REGION: '${self:provider.region}',
       ARCHIVE_QUEUE_URL: { Ref: 'ArchiveQueue' } as unknown as string,
-      ADMIN_PORTAL_URL: '${env:ADMIN_PORTAL_URL, "https://icebox.icecampus.com/admin"}'
+      ADMIN_PORTAL_URL: '${env:ADMIN_PORTAL_URL, "https://icebox.icecampus.com/admin"}',
+      VLE_REFERRER_CHECK_ENABLED: '${env:VLE_REFERRER_CHECK_ENABLED, "false"}',
+      VLE_ALLOWED_REFERRERS: '${env:VLE_ALLOWED_REFERRERS, "https://my.icecampus.com"}'
     },
     iam: {
       role: {
@@ -109,6 +111,31 @@ const serverlessConfiguration = {
       Stage: '${sls:stage}'
     },
     httpApi: {
+      authorizers: {
+        vleReferer: {
+          type: 'request',
+          functionArn: {
+            'Fn::GetAtt': ['VleAuthorizerLambdaFunction', 'Arn']
+          },
+          identitySource: [
+            '$request.header.referer',
+            '$request.header.Referer',
+            '$request.header.origin',
+            '$request.header.Origin'
+          ],
+          enableSimpleResponses: true
+        }
+      },
+      routeSettings: {
+        'POST /uploads/sessions': {
+          throttlingBurstLimit: 3,
+          throttlingRateLimit: 0.01
+        },
+        'POST /uploads/{submissionId}/complete': {
+          throttlingBurstLimit: 3,
+          throttlingRateLimit: 0.01
+        }
+      },
       cors: {
         allowedOrigins: ['*'],
         allowedHeaders: [
@@ -146,13 +173,17 @@ const serverlessConfiguration = {
     patterns: ['!node_modules/.cache/**']
   },
   functions: {
+    vleAuthorizer: {
+      handler: 'src/functions/vleAuthorizer.handler'
+    },
     createUploadSession: {
       handler: 'src/functions/createUploadSession.handler',
       events: [
         {
           httpApi: {
             method: 'post',
-            path: '/uploads/sessions'
+            path: '/uploads/sessions',
+            authorizer: 'vleReferer'
           }
         }
       ]
@@ -165,7 +196,8 @@ const serverlessConfiguration = {
         {
           httpApi: {
             method: 'post',
-            path: '/uploads/{submissionId}/complete'
+            path: '/uploads/{submissionId}/complete',
+            authorizer: 'vleReferer'
           }
         }
       ]
@@ -176,7 +208,8 @@ const serverlessConfiguration = {
         {
           httpApi: {
             method: 'get',
-            path: '/uploads/{submissionId}'
+            path: '/uploads/{submissionId}',
+            authorizer: 'vleReferer'
           }
         }
       ]
@@ -201,7 +234,8 @@ const serverlessConfiguration = {
         {
           httpApi: {
             method: 'get',
-            path: '/students/{studentId}/submissions'
+            path: '/students/{studentId}/submissions',
+            authorizer: 'vleReferer'
           }
         }
       ]
@@ -311,7 +345,8 @@ const serverlessConfiguration = {
         {
           httpApi: {
             method: 'get',
-            path: '/courses'
+            path: '/courses',
+            authorizer: 'vleReferer'
           }
         }
       ]

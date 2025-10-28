@@ -11,6 +11,8 @@ This document walks through promoting ICEBox to production. The flow covers both
 - Production-specific environment values:
   - `SES_SOURCE_EMAIL` (verified in SES)
   - `ADMIN_PORTAL_URL` (defaults to `https://icebox.icecampus.com/admin` if not provided)
+  - `VLE_REFERRER_CHECK_ENABLED=true` (enforce Circle-only access in prod)
+  - `VLE_ALLOWED_REFERRERS=https://my.icecampus.com`
   - Any other overrides you need (e.g., `SECRETS_PREFIX` if you’re not using the default `/icebox/prod/`).
 - Secrets under `/icebox/prod/…` if/when Lambdas start reading from Secrets Manager (none required yet).
 
@@ -71,6 +73,8 @@ This provisions:
   VITE_ADMIN_USER_POOL_ID=REGION_HERE_XXXXXXXXX
   VITE_ADMIN_USER_POOL_CLIENT_ID=abcd1234example
   VITE_ADMIN_USER_POOL_REGION=REGION_HERE
+  VITE_REQUIRE_VLE_REFERRER=true
+  VITE_ALLOWED_VLE_REFERRERS=https://my.icecampus.com
   ```
 
 ### Deployment Script

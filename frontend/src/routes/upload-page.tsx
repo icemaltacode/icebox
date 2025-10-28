@@ -239,6 +239,36 @@ export const UploadPage = () => {
     [courseCodeParam, studentEmailParam, studentIdParam, studentNameParam]
   );
 
+  const requireVleReferrer = import.meta.env.VITE_REQUIRE_VLE_REFERRER === 'true';
+  const allowedVleReferrersRaw = import.meta.env.VITE_ALLOWED_VLE_REFERRERS ?? 'https://my.icecampus.com';
+  const allowedVleReferrers = useMemo(
+    () =>
+      allowedVleReferrersRaw
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    [allowedVleReferrersRaw]
+  );
+  const [referrerAllowed, setReferrerAllowed] = useState<boolean>(() => !requireVleReferrer);
+  const [referrerChecked, setReferrerChecked] = useState<boolean>(() => !requireVleReferrer);
+
+  useEffect(() => {
+    if (!requireVleReferrer) {
+      return;
+    }
+
+    if (typeof document === 'undefined') {
+      setReferrerAllowed(false);
+      setReferrerChecked(true);
+      return;
+    }
+
+    const referrer = document.referrer ?? '';
+    const allowed = allowedVleReferrers.some((entry) => referrer.startsWith(entry));
+    setReferrerAllowed(allowed);
+    setReferrerChecked(true);
+  }, [allowedVleReferrers, requireVleReferrer]);
+
   const [form, setForm] = useState<UploadFormState>(initialFormState);
   const [files, setFiles] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -722,6 +752,22 @@ export const UploadPage = () => {
     event.preventDefault();
     void uploadFiles();
   };
+
+  if (requireVleReferrer && referrerChecked && !referrerAllowed) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6 py-12">
+        <Card className="bg-card/80 shadow-sm">
+          <CardHeader>
+            <CardTitle>Launch ICEBox from Circle Learn</CardTitle>
+            <CardDescription>
+              Please access this upload page via Circle Learn (https://my.icecampus.com). If you
+              believe you received this message in error, contact your administrator.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
