@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import type { AWS } from '@serverless/typescript';
 
 const stage = '${opt:stage, env:STAGE, "dev"}';
