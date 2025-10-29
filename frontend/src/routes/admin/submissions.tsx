@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
-  ArrowDownWideNarrow,
   ArrowUpDown,
   BellRing,
-  DownloadCloud,
-  FolderOpen,
+  CalendarClock,
+  Clock3,
+  FileText,
   Loader2,
   RefreshCw,
-  Trash2
+  Trash2,
+  Upload
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,21 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
 import { useAdminApi } from '@/hooks/use-admin-api';
 import { useToast } from '@/hooks/use-toast';
 import type {
@@ -43,11 +59,9 @@ import { cn } from '@/lib/utils';
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 const STATUS_LABELS: Record<string, string> = {
-  PENDING: 'Pending',
-  PENDING_ARCHIVE: 'Processing',
-  COMPLETED: 'Completed',
-  ARCHIVE_QUEUE_FAILED: 'Queue failed',
-  ARCHIVE_FAILED: 'Archive failed'
+  ACCESSED: 'Accessed',
+  UPLOADED: 'Uploaded',
+  ERROR: 'Error'
 };
 
 const SORT_OPTIONS: Array<{ value: ListSubmissionsRequest['sortField']; label: string }> = [
@@ -75,7 +89,7 @@ const formatBytes = (bytes: number | null | undefined): string => {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[exponent]}`;
 };
 
-const formatDateTime = (iso: string | null): string => {
+const formatDate = (iso: string | null): string => {
   if (!iso) {
     return '—';
   }
@@ -85,10 +99,8 @@ const formatDateTime = (iso: string | null): string => {
   }
   return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    month: '2-digit',
+    year: 'numeric'
   }).format(date);
 };
 
@@ -112,12 +124,37 @@ const formatRelative = (iso: string | null): string => {
 };
 
 const formatTimeline = (iso: string | null): string => {
-  const absolute = formatDateTime(iso);
+  const absolute = formatDate(iso);
   const relative = formatRelative(iso);
   return relative ? `${absolute} (${relative})` : absolute;
 };
 
-const getStatusLabel = (status: string) => STATUS_LABELS[status] ?? status;
+const resolveStatusMeta = (submission: AdminSubmission) => {
+  if (
+    submission.status === 'ARCHIVE_QUEUE_FAILED' ||
+    submission.status === 'ARCHIVE_FAILED'
+  ) {
+    return {
+      label: submission.status.replaceAll('_', ' '),
+      className: 'border-destructive text-destructive',
+      icon: AlertTriangle
+    };
+  }
+
+  if (submission.lastAccessedAt) {
+    return {
+      label: STATUS_LABELS.ACCESSED,
+      className: 'border-emerald-500 text-emerald-600 dark:border-emerald-400 dark:text-emerald-300',
+      icon: FileText
+    };
+  }
+
+  return {
+    label: STATUS_LABELS.UPLOADED,
+    className: 'border-amber-500 text-amber-600 dark:border-amber-400 dark:text-amber-300',
+    icon: Upload
+  };
+};
 
 const useDebouncedValue = (value: string, delay = 300) => {
   const [debounced, setDebounced] = useState(value);
@@ -156,12 +193,11 @@ export const AdminSubmissionsPage = () => {
     page,
     pageSize,
     search: debouncedSearch || undefined,
-    status: statusFilter || undefined,
     accessed: accessedFilter || undefined,
     courseId: courseFilter || undefined,
     sortField,
     sortOrder
-  }), [page, pageSize, debouncedSearch, statusFilter, accessedFilter, courseFilter, sortField, sortOrder]);
+  }), [page, pageSize, debouncedSearch, accessedFilter, courseFilter, sortField, sortOrder]);
 
   const queryKey = useMemo(
     () => ['admin', 'submissions', listParams],
@@ -228,11 +264,49 @@ export const AdminSubmissionsPage = () => {
     }
   });
 
-  const submissions: AdminSubmission[] = data?.items ?? [];
-  const totalCount = data?.totalCount ?? 0;
-  const totalPages = data?.totalPages ?? 1;
-  const startItem = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
-  const endItem = totalCount === 0 ? 0 : Math.min(page * pageSize, totalCount);
+  const rawSubmissions: AdminSubmission[] = data?.items ?? [];
+  const filteredSubmissions = rawSubmissions.filter((submission) => {
+    if (statusFilter === 'accessed' && !submission.lastAccessedAt) {
+      return false;
+    }
+
+    if (
+      statusFilter === 'uploaded' &&
+      (submission.lastAccessedAt ||
+        submission.status === 'ARCHIVE_QUEUE_FAILED' ||
+        submission.status === 'ARCHIVE_FAILED')
+    ) {
+      return false;
+    }
+
+    if (
+      statusFilter === 'error' &&
+      submission.status !== 'ARCHIVE_QUEUE_FAILED' &&
+      submission.status !== 'ARCHIVE_FAILED'
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const submissions = filteredSubmissions;
+  const pageItemCount = submissions.length;
+  const totalCount = data?.totalCount ?? pageItemCount;
+  const totalPages = data?.totalPages ?? Math.max(1, Math.ceil(totalCount / pageSize));
+  const displayStart = pageItemCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const displayEnd = pageItemCount === 0 ? 0 : displayStart + pageItemCount - 1;
+  const displayTotal = (statusFilter || accessedFilter || courseFilter) ? pageItemCount : totalCount;
+
+  const filtersApplied = Boolean(
+    searchTerm.trim() ||
+      statusFilter ||
+      accessedFilter ||
+      courseFilter ||
+      sortField !== 'createdAt' ||
+      sortOrder !== 'desc' ||
+      pageSize !== PAGE_SIZE_OPTIONS[0]
+  );
 
   const isMutating = remindMutation.isPending || deleteMutation.isPending;
 
@@ -240,13 +314,19 @@ export const AdminSubmissionsPage = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Submissions</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Monitor uploaded work, remind educators, and manage archives before lifecycle policies purge them.
           </p>
         </div>
+        <Input
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          placeholder="Search by course, educator, student or file"
+          className="max-w-lg"
+        />
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {selectedCourse ? (
             <span>
@@ -255,7 +335,7 @@ export const AdminSubmissionsPage = () => {
           ) : null}
           {statusFilter ? (
             <span>
-              Status <strong>{getStatusLabel(statusFilter)}</strong>
+              Status <strong>{statusFilter === 'accessed' ? 'Accessed' : statusFilter === 'uploaded' ? 'Uploaded' : 'Errors'}</strong>
             </span>
           ) : null}
           {accessedFilter ? (
@@ -266,141 +346,156 @@ export const AdminSubmissionsPage = () => {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="space-y-4">
+      <Card className="relative">
+        <CardHeader className="space-y-4 pr-12">
           <CardTitle>Filters</CardTitle>
           <CardDescription>Refine the list of submissions or adjust sorting.</CardDescription>
-          <CardContent className="-mx-1 flex flex-wrap gap-3 px-0">
-            <div className="relative w-full max-w-sm flex-1">
-              <Input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by course, educator, student or file"
-                className="pr-10"
-              />
-              <ArrowUpDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="submission-status" className="text-xs uppercase text-muted-foreground">
-                Status
-              </Label>
-              <select
-                id="submission-status"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className="h-9 min-w-[160px] rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">All statuses</option>
-                {Object.keys(STATUS_LABELS).map((status) => (
-                  <option key={status} value={status}>
-                    {STATUS_LABELS[status]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="submission-course" className="text-xs uppercase text-muted-foreground">
-                Course
-              </Label>
-              <select
-                id="submission-course"
-                value={courseFilter}
-                onChange={(event) => setCourseFilter(event.target.value)}
-                className="h-9 min-w-[180px] rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">All courses</option>
-                {coursesQuery.data?.items.map((course) => (
-                  <option key={course.courseCode} value={course.courseCode}>
-                    {course.courseCode}
-                    {course.courseName ? ` — ${course.courseName}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="submission-access" className="text-xs uppercase text-muted-foreground">
-                Accessed
-              </Label>
-              <select
-                id="submission-access"
-                value={accessedFilter}
-                onChange={(event) => setAccessedFilter(event.target.value as 'viewed' | 'not_viewed' | '')}
-                className="h-9 min-w-[140px] rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">All submissions</option>
-                <option value="viewed">Viewed</option>
-                <option value="not_viewed">Not viewed</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="submission-sort" className="text-xs uppercase text-muted-foreground">
-                Sort by
-              </Label>
-              <div className="flex items-center gap-2">
-                <select
-                  id="submission-sort"
-                  value={sortField ?? 'createdAt'}
-                  onChange={(event) => setSortField(event.target.value as ListSubmissionsRequest['sortField'])}
-                  className="h-9 min-w-[180px] rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {SORT_OPTIONS.map((option) => (
-                    <option key={option.value ?? 'createdAt'} value={option.value ?? 'createdAt'}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+        </CardHeader>
+        {filtersApplied ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
-                  onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-                  className="h-9 w-9"
-                  title={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
+                  className="absolute right-4 top-4 h-8 w-8"
+                  onClick={() => {
+                    setStatusFilter('');
+                    setAccessedFilter('');
+                    setCourseFilter('');
+                    setSortField('createdAt');
+                    setSortOrder('desc');
+                    setPageSize(PAGE_SIZE_OPTIONS[0]);
+                    setPage(1);
+                    setSearchTerm('');
+                  }}
                 >
-                  <ArrowDownWideNarrow
-                    className={cn('h-4 w-4 transition-transform', {
-                      'rotate-180': sortOrder === 'asc'
-                    })}
-                  />
+                  <RefreshCw className="h-4 w-4" />
                 </Button>
-              </div>
-            </div>
+              </TooltipTrigger>
+              <TooltipContent sideOffset={6}>Reset filters</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
+        <CardContent className="flex flex-wrap gap-3 px-4 pb-4">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs uppercase text-muted-foreground">Status</Label>
+            <Select value={statusFilter || 'all'} onValueChange={(value) => setStatusFilter(value === 'all' ? '' : value)}>
+              <SelectTrigger className="min-w-[180px]">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Status</SelectLabel>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="accessed">Accessed</SelectItem>
+                  <SelectItem value="uploaded">Uploaded</SelectItem>
+                  <SelectItem value="error">Errors</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs uppercase text-muted-foreground">Course</Label>
+            <Select value={courseFilter || 'all'} onValueChange={(value) => setCourseFilter(value === 'all' ? '' : value)}>
+              <SelectTrigger className="min-w-[220px]">
+                <SelectValue placeholder="All courses" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectGroup>
+                  <SelectLabel>Courses</SelectLabel>
+                  <SelectItem value="all">All courses</SelectItem>
+                  {coursesQuery.data?.items.map((course) => (
+                    <SelectItem key={course.courseCode} value={course.courseCode}>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">{course.courseCode}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {course.courseName ?? 'Unnamed course'}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
             <div className="flex flex-col gap-1">
-              <Label htmlFor="submission-page-size" className="text-xs uppercase text-muted-foreground">
-                Rows
-              </Label>
-              <select
-                id="submission-page-size"
-                value={pageSize}
-                onChange={(event) => setPageSize(Number.parseInt(event.target.value, 10))}
-                className="h-9 min-w-[100px] rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              <Label className="text-xs uppercase text-muted-foreground">Accessed</Label>
+              <Select
+                value={accessedFilter || 'all'}
+                onValueChange={(value) =>
+                  setAccessedFilter(value === 'all' ? '' : (value as 'viewed' | 'not_viewed'))
+                }
               >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <SelectTrigger className="min-w-[160px]">
+                  <SelectValue placeholder="All submissions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Accessed</SelectLabel>
+                    <SelectItem value="all">All submissions</SelectItem>
+                    <SelectItem value="viewed">Viewed</SelectItem>
+                    <SelectItem value="not_viewed">Not viewed</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs uppercase text-muted-foreground">Sort by</Label>
+            <Select
+              value={sortField ?? 'createdAt'}
+              onValueChange={(value) => setSortField(value as ListSubmissionsRequest['sortField'])}
+            >
+              <SelectTrigger className="min-w-[200px]">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Sort by</SelectLabel>
+                  {SORT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value ?? 'createdAt'} value={option.value ?? 'createdAt'}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
             <Button
               type="button"
-              variant="ghost"
-              className="self-end"
-              onClick={() => {
-                setSearchTerm('');
-                setStatusFilter('');
-                setAccessedFilter('');
-                setCourseFilter('');
-                setSortField('createdAt');
-                setSortOrder('desc');
-                setPageSize(PAGE_SIZE_OPTIONS[0]);
-              }}
+              variant="outline"
+              size="icon"
+              onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              title={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
+              className="h-9 w-9"
             >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Reset
+              <ArrowUpDown className={cn('h-4 w-4 transition-transform', { 'rotate-180': sortOrder === 'asc' })} />
             </Button>
-          </CardContent>
-        </CardHeader>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs uppercase text-muted-foreground">Rows</Label>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => setPageSize(Number.parseInt(value, 10))}
+              >
+                <SelectTrigger className="min-w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Rows</SelectLabel>
+                    {PAGE_SIZE_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={String(option)}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
       <div className="overflow-hidden rounded-lg border">
@@ -439,26 +534,50 @@ export const AdminSubmissionsPage = () => {
               </tr>
             ) : (
               submissions.map((submission) => {
+                const statusMeta = resolveStatusMeta(submission);
                 const canSendReminder = submission.status !== 'DELETED';
                 const reminderPending = remindMutation.isPending;
-                const deletePending = deleteMutation.isPending &&
+                const deletePending =
+                  deleteMutation.isPending &&
                   submissionToDelete?.submissionId === submission.submissionId;
                 const timelineItems = [
-                  { label: 'Uploaded', value: submission.createdAt },
-                  { label: 'Last accessed', value: submission.lastAccessedAt },
-                  { label: 'Archive move', value: submission.archiveTransitionAt },
-                  { label: 'Lifecycle delete', value: submission.deletionAt }
+                  { label: 'Uploaded', value: submission.createdAt, icon: Upload },
+                  {
+                    label: 'Last accessed',
+                    value: submission.lastAccessedAt,
+                    icon: Clock3
+                  },
+                  {
+                    label: 'Archive move',
+                    value: submission.archiveTransitionAt,
+                    icon: CalendarClock
+                  },
+                  {
+                    label: 'Lifecycle delete',
+                    value: submission.deletionAt,
+                    icon: Trash2
+                  }
                 ];
 
                 return (
-                  <tr key={submission.submissionId} className="align-top">
+                  <tr
+                    key={submission.submissionId}
+                    className="align-top transition-colors hover:bg-muted/40"
+                  >
                     <td className="px-4 py-4">
                       <div className="font-medium text-foreground">{submission.courseId}</div>
                       <div className="text-xs text-muted-foreground">
                         {submission.courseName ?? 'No name configured'}
                       </div>
-                      <div className="mt-2 inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                        {getStatusLabel(submission.status)}
+                      <div
+                        className={cn(
+                          'mt-2 inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-xs',
+                          statusMeta.className
+                        )}
+                        title={statusMeta.label}
+                      >
+                        <statusMeta.icon className="h-3 w-3" aria-hidden="true" />
+                        <span className="sr-only">{statusMeta.label}</span>
                       </div>
                     </td>
                     <td className="px-4 py-4">
@@ -482,40 +601,48 @@ export const AdminSubmissionsPage = () => {
                     </td>
                     <td className="px-4 py-4">
                       <div className="font-medium text-foreground">
-                        {submission.fileCount} file{submission.fileCount === 1 ? '' : 's'}
+                        <a
+                          href={submission.files[0]?.downloadToken && submission.downloadBaseUrl
+                            ? `${submission.downloadBaseUrl}/downloads/${submission.submissionId}/${submission.files[0].downloadToken}`
+                            : '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          Download
+                        </a>
                       </div>
                       <div className="text-xs text-muted-foreground">{formatBytes(submission.totalSize)}</div>
-                      <details className="mt-2 space-y-1 text-xs">
-                        <summary className="cursor-pointer text-primary">View files</summary>
-                        <ul className="mt-2 space-y-1 text-muted-foreground">
-                          {submission.files.map((file) => (
-                            <li key={file.objectKey} className="flex items-center gap-2">
-                              <DownloadCloud className="h-3 w-3 text-muted-foreground" />
-                              <span className="truncate">{file.fileName ?? file.objectKey}</span>
-                              <span className="text-[10px] text-muted-foreground/80">
-                                {formatBytes(file.size)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
                     </td>
                     <td className="px-4 py-4 text-xs text-muted-foreground">
-                      <ul className="space-y-1">
-                        {timelineItems.map((item) => (
-                          <li key={item.label}>
-                            <span className="font-semibold text-foreground">{item.label}:</span>{' '}
-                            {formatTimeline(item.value)}
-                          </li>
-                        ))}
-                        <li>
-                          <span className="font-semibold text-foreground">Reminders sent:</span>{' '}
-                          {submission.reminderCount}
-                          {submission.lastReminderAt
-                            ? ` (last ${formatTimeline(submission.lastReminderAt)})`
-                            : ''}
-                        </li>
-                      </ul>
+                      <div className="flex flex-col gap-3">
+                        {timelineItems.map((item) => {
+                          const Icon = item.icon;
+                          return (
+                            <div
+                              key={item.label}
+                              className="flex items-start gap-2"
+                              title={item.label}
+                            >
+                              <Icon className="mt-0.5 h-3 w-3" aria-hidden="true" />
+                              <span className="sr-only">{item.label}</span>
+                              <span className="text-xs text-muted-foreground">{formatTimeline(item.value)}</span>
+                            </div>
+                          );
+                        })}
+                        {submission.reminderCount > 0 && (
+                          <div className="flex items-start gap-2" title="Reminders sent">
+                            <BellRing className="mt-0.5 h-3 w-3" aria-hidden="true" />
+                            <span className="sr-only">Reminders sent</span>
+                            <span className="text-xs text-muted-foreground">
+                              {submission.reminderCount}
+                              {submission.lastReminderAt
+                                ? ` (last ${formatTimeline(submission.lastReminderAt)})`
+                                : ''}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end gap-2">
@@ -566,109 +693,141 @@ export const AdminSubmissionsPage = () => {
               No submissions match your filters.
             </div>
           ) : (
-            submissions.map((submission) => (
-              <Card key={submission.submissionId} className="border-border">
-                <CardHeader className="space-y-1">
-                  <CardTitle className="flex items-center justify-between text-base">
-                    <span>
-                      {submission.courseId}
-                      {submission.courseName ? ` — ${submission.courseName}` : ''}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                      <FolderOpen className="h-3 w-3" /> {getStatusLabel(submission.status)}
-                    </span>
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Uploaded {formatTimeline(submission.createdAt)}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 text-sm">
-                  <div>
-                    <p className="text-xs font-semibold uppercase text-muted-foreground">Educator</p>
-                    <p className="font-medium text-foreground">{submission.educatorName ?? '—'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {submission.educatorEmails.length ? submission.educatorEmails.join(', ') : 'No email recorded'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase text-muted-foreground">Student</p>
-                    <p className="font-medium text-foreground">{submission.studentName ?? '—'}</p>
-                    <p className="text-xs text-muted-foreground">{submission.studentEmail ?? 'No email supplied'}</p>
-                    <p className="text-xs text-muted-foreground">{submission.studentId ?? 'No ID'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase text-muted-foreground">Files</p>
-                    <p className="font-medium text-foreground">
-                      {submission.fileCount} • {formatBytes(submission.totalSize)}
-                    </p>
-                    <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                      {submission.files.map((file) => (
-                        <li key={file.objectKey} className="flex items-center gap-2">
-                          <DownloadCloud className="h-3 w-3" />
-                          <span className="truncate">{file.fileName ?? file.objectKey}</span>
-                          <span className="text-[10px] text-muted-foreground/80">{formatBytes(file.size)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+            submissions.map((submission) => {
+              const statusMeta = resolveStatusMeta(submission);
+              const timelineItems = [
+                { label: 'Uploaded', value: submission.createdAt, icon: Upload },
+                {
+                  label: 'Last accessed',
+                  value: submission.lastAccessedAt,
+                  icon: Clock3
+                },
+                {
+                  label: 'Archive move',
+                  value: submission.archiveTransitionAt,
+                  icon: CalendarClock
+                },
+                {
+                  label: 'Lifecycle delete',
+                  value: submission.deletionAt,
+                  icon: Trash2
+                }
+              ];
+
+              return (
+                <Card key={submission.submissionId} className="border-border">
+                  <CardHeader className="space-y-1">
+                    <CardTitle className="flex items-center justify-between text-base">
+                      <span>
+                        {submission.courseId}
+                        {submission.courseName ? ` — ${submission.courseName}` : ''}
+                      </span>
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
+                          statusMeta.className
+                        )}
+                        title={statusMeta.label}
+                      >
+                        <statusMeta.icon className="h-3 w-3" aria-hidden="true" />
+                        <span className="sr-only">{statusMeta.label}</span>
+                      </span>
+                    </CardTitle>
+                    <CardDescription className="flex items-center gap-2 text-xs" title="Uploaded">
+                      <Upload className="h-3 w-3" aria-hidden="true" />
+                      <span>{formatTimeline(submission.createdAt)}</span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 text-sm">
                     <div>
-                      <p className="font-semibold text-foreground">Last accessed</p>
-                      <p>{formatTimeline(submission.lastAccessedAt)}</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">Archive move</p>
-                      <p>{formatTimeline(submission.archiveTransitionAt)}</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">Lifecycle delete</p>
-                      <p>{formatTimeline(submission.deletionAt)}</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">Reminders</p>
-                      <p>
-                        {submission.reminderCount}
-                        {submission.lastReminderAt
-                          ? ` (last ${formatTimeline(submission.lastReminderAt)})`
-                          : ''}
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Educator</p>
+                      <p className="font-medium text-foreground">{submission.educatorName ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {submission.educatorEmails.length ? submission.educatorEmails.join(', ') : 'No email recorded'}
                       </p>
                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      className="flex-1"
-                      variant="outline"
-                      size="sm"
-                      disabled={remindMutation.isPending || deleteMutation.isPending}
-                      onClick={() => remindMutation.mutate(submission.submissionId)}
-                    >
-                      {remindMutation.isPending ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <BellRing className="mr-2 h-4 w-4" />
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Student</p>
+                      <p className="font-medium text-foreground">{submission.studentName ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground">{submission.studentEmail ?? 'No email supplied'}</p>
+                      <p className="text-xs text-muted-foreground">{submission.studentId ?? 'No ID'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Files</p>
+                      <p className="font-medium text-foreground">
+                        <a
+                          href={submission.files[0]?.downloadToken && submission.downloadBaseUrl
+                            ? `${submission.downloadBaseUrl}/downloads/${submission.submissionId}/${submission.files[0].downloadToken}`
+                            : '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          Download
+                        </a>
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatBytes(submission.totalSize)}</p>
+                    </div>
+                    <div className="flex flex-col gap-3 text-xs text-muted-foreground">
+                      {timelineItems.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <div key={item.label} className="flex items-start gap-2" title={item.label}>
+                            <Icon className="mt-0.5 h-3 w-3" aria-hidden="true" />
+                            <span className="sr-only">{item.label}</span>
+                            <span>{formatTimeline(item.value)}</span>
+                          </div>
+                        );
+                      })}
+                      {submission.reminderCount > 0 && (
+                        <div className="flex items-start gap-2" title="Reminders sent">
+                          <BellRing className="mt-0.5 h-3 w-3" aria-hidden="true" />
+                          <span className="sr-only">Reminders sent</span>
+                          <span>
+                            {submission.reminderCount}
+                            {submission.lastReminderAt
+                              ? ` (last ${formatTimeline(submission.lastReminderAt)})`
+                              : ''}
+                          </span>
+                        </div>
                       )}
-                      Remind
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      variant="destructive"
-                      size="sm"
-                      disabled={deleteMutation.isPending || remindMutation.isPending}
-                      onClick={() => setSubmissionToDelete(submission)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" /> Delete
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1"
+                        variant="outline"
+                        size="sm"
+                        disabled={remindMutation.isPending || deleteMutation.isPending}
+                        onClick={() => remindMutation.mutate(submission.submissionId)}
+                      >
+                        {remindMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <BellRing className="mr-2 h-4 w-4" />
+                        )}
+                        Remind
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        variant="destructive"
+                        size="sm"
+                        disabled={deleteMutation.isPending || remindMutation.isPending}
+                        onClick={() => setSubmissionToDelete(submission)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <div>
-          Showing {startItem}–{endItem} of {totalCount} submissions
+          Showing {displayStart}–{displayEnd} of {displayTotal} submissions
           {isFetching ? ' · Updating…' : ''}
         </div>
         <div className="flex items-center gap-2">
