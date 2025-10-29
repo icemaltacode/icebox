@@ -72,6 +72,73 @@ export type UpdateAdminUserPayload = {
   familyName?: string;
 };
 
+export type AdminSubmissionFile = {
+  fileName?: string | null;
+  contentType?: string | null;
+  size?: number | null;
+  objectKey: string;
+  downloadToken?: string | null;
+  expiresAt?: string | null;
+};
+
+export type AdminSubmission = {
+  submissionId: string;
+  courseId: string;
+  courseName: string | null;
+  educatorName: string | null;
+  educatorEmails: string[];
+  studentName: string | null;
+  studentEmail: string | null;
+  studentId: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string | null;
+  completedAt: string | null;
+  firstAccessedAt: string | null;
+  lastAccessedAt: string | null;
+  reminderCount: number;
+  lastReminderAt: string | null;
+  comment: string | null;
+  files: AdminSubmissionFile[];
+  fileCount: number;
+  totalSize: number;
+  archiveTransitionAt: string | null;
+  deletionAt: string | null;
+  downloadBaseUrl: string | null;
+};
+
+export type ListSubmissionsRequest = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+  courseId?: string;
+  educatorEmail?: string;
+  student?: string;
+  accessed?: 'viewed' | 'not_viewed';
+  sortField?:
+    | 'createdAt'
+    | 'updatedAt'
+    | 'completedAt'
+    | 'lastAccessedAt'
+    | 'courseId'
+    | 'courseName'
+    | 'educatorName'
+    | 'studentName'
+    | 'status'
+    | 'fileCount'
+    | 'totalSize';
+  sortOrder?: 'asc' | 'desc';
+};
+
+export type ListSubmissionsResponse = {
+  items: AdminSubmission[];
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalCount: number;
+};
+
 const withAuthHeader = (token: string) => ({
   headers: {
     Authorization: `Bearer ${token}`
@@ -149,4 +216,23 @@ export const resetAdminUserPassword = async (token: string, username: string): P
 
 export const deleteAdminUser = async (token: string, username: string): Promise<void> => {
   await api.delete(`/admin/users/${encodeURIComponent(username)}`, withAuthHeader(token));
+};
+
+export const listSubmissions = async (
+  token: string,
+  params: ListSubmissionsRequest
+): Promise<ListSubmissionsResponse> => {
+  const { data } = await api.get<ListSubmissionsResponse>('/admin/submissions', {
+    params,
+    ...withAuthHeader(token)
+  });
+  return data;
+};
+
+export const remindSubmission = async (token: string, submissionId: string): Promise<void> => {
+  await api.post(`/admin/submissions/${encodeURIComponent(submissionId)}/remind`, undefined, withAuthHeader(token));
+};
+
+export const deleteSubmission = async (token: string, submissionId: string): Promise<void> => {
+  await api.delete(`/admin/submissions/${encodeURIComponent(submissionId)}`, withAuthHeader(token));
 };

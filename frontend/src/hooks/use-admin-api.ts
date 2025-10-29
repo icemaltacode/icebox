@@ -8,14 +8,19 @@ import {
   inviteAdminUser,
   listAdminUsers,
   listCourses,
+  listSubmissions,
   resetAdminUserPassword,
   type ListAdminUsersRequest,
   type ListAdminUsersResponse,
   type ListCoursesRequest,
   type ListCoursesResponse,
+  type ListSubmissionsRequest,
+  type ListSubmissionsResponse,
   type SaveCoursePayload,
   type UpdateAdminUserPayload,
   type InviteAdminUserPayload,
+  remindSubmission,
+  deleteSubmission,
   updateAdminUser,
   updateCourse
 } from '@/lib/admin-api';
@@ -60,6 +65,12 @@ export const useAdminApi = () => {
     resetAdminUserPassword: (username: string) =>
       withToken((token) => resetAdminUserPassword(token, username)),
     deleteAdminUser: (username: string) =>
-      withToken((token) => deleteAdminUser(token, username))
+      withToken((token) => deleteAdminUser(token, username)),
+    listSubmissions: (params: ListSubmissionsRequest): Promise<ListSubmissionsResponse> =>
+      withToken((token) => listSubmissions(token, params)),
+    remindSubmission: (submissionId: string) =>
+      withToken((token) => remindSubmission(token, submissionId)),
+    deleteSubmission: (submissionId: string) =>
+      withToken((token) => deleteSubmission(token, submissionId))
   };
 };

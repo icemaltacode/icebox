@@ -13,6 +13,8 @@ type EducatorEmailOptions = {
   completedAtIso: string;
   files: EmailLink[];
   comment?: string;
+  mode?: 'new' | 'reminder';
+  reminderDays?: number;
 };
 
 type StudentEmailOptions = {
@@ -130,6 +132,12 @@ const detailValueStyles = `
   font-size: 16px;
   font-weight: 600;
   margin: 4px 0 0 0;
+`;
+
+const reminderNoticeStyles = `
+  margin: 20px 0;
+  color: #FFFFFF;
+  font-size: 16px;
 `;
 
 const renderFileLinks = (files: EmailLink[]) =>
@@ -277,13 +285,30 @@ export const buildEducatorEmail = (options: EducatorEmailOptions) => {
     studentEmail,
     completedAtIso,
     files,
-    comment
+    comment,
+    mode = 'new',
+    reminderDays = 0
   } = options;
 
   const formattedTimestamp = formatTimestamp(completedAtIso);
+  const studentReference = studentName ?? studentEmail ?? studentId ?? 'Student';
+  const escapedStudentReference = escapeHtml(studentReference);
+  const isReminder = mode === 'reminder';
+  const normalizedReminderDays = Number.isFinite(reminderDays) ? Math.max(0, Math.floor(reminderDays)) : 0;
+  const reminderDescriptor =
+    normalizedReminderDays === 0
+      ? 'today.'
+      : `${normalizedReminderDays} day${normalizedReminderDays === 1 ? '' : 's'} ago.`;
+  const reminderNoticeHtml = isReminder
+    ? `<p style="${reminderNoticeStyles}"><strong>This assignment was submitted ${reminderDescriptor}</strong></p>`
+    : '';
+  const emailSubject = isReminder
+    ? `[${courseCode}] - Reminder: assignment upload by ${escapedStudentReference}`
+    : `[${courseCode}] - Assignment Upload by ${escapedStudentReference}`;
+  const headerTitle = isReminder ? 'Reminder: assignment awaiting download' : 'New student submission';
 
   return {
-    subject: `[${courseCode}] - Assignment Upload by ${escapeHtml(studentName ?? studentEmail ?? studentId ?? 'Student')}`,
+    subject: emailSubject,
     html: `
       <html>
         <body style="${baseEmailStyles}">
@@ -295,10 +320,11 @@ export const buildEducatorEmail = (options: EducatorEmailOptions) => {
                   alt="ICEBox"
                   style="height:40px; width:auto; display:block; margin:0;"
                 />
-                <h1 style="margin: 12px 0 0; font-size: 24px;">New student submission</h1>
+                <h1 style="margin: 12px 0 0; font-size: 24px;">${headerTitle}</h1>
                 <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
               </div>
               <div style="${sectionStyles}">
+                ${reminderNoticeHtml}
                 <div style="margin-bottom: 20px;">
                   <p style="${detailLabelStyles}">Submitted by</p>
                   <p style="${detailValueStyles}">${studentName ? escapeHtml(studentName) : 'Not provided'}</p>

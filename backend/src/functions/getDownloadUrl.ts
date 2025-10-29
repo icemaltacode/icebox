@@ -57,34 +57,49 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   const presignedUrl = await getSignedUrl(s3, command, { expiresIn: DOWNLOAD_LINK_TTL_SECONDS });
 
-  // Track first access and send notification to student
+  // Track access activity and optionally send first-access notification
   const isFirstAccess = !existing.Item.firstAccessedAt;
   const studentEmail = existing.Item.studentEmail as string | undefined;
   const studentName = existing.Item.studentName as string | undefined;
   const courseId = existing.Item.courseId as string;
+  const accessedAt = new Date().toISOString();
+
+  const updateExpressionSegments = [
+    '#lastAccessedAt = :accessedAt',
+    '#updatedAt = :accessedAt',
+    '#accessCount = if_not_exists(#accessCount, :zero) + :one'
+  ];
+  const expressionAttributeNames: Record<string, string> = {
+    '#lastAccessedAt': 'lastAccessedAt',
+    '#updatedAt': 'updatedAt',
+    '#accessCount': 'accessCount'
+  };
+  const expressionAttributeValues: Record<string, unknown> = {
+    ':accessedAt': accessedAt,
+    ':one': 1,
+    ':zero': 0
+  };
+
+  if (isFirstAccess) {
+    updateExpressionSegments.push('#firstAccessedAt = :accessedAt');
+    expressionAttributeNames['#firstAccessedAt'] = 'firstAccessedAt';
+  }
+
+  try {
+    await dynamodb.send(
+      new UpdateCommand({
+        TableName: ASSIGNMENTS_TABLE,
+        Key: { submissionId },
+        UpdateExpression: `SET ${updateExpressionSegments.join(', ')}`,
+        ExpressionAttributeNames: expressionAttributeNames,
+        ExpressionAttributeValues: expressionAttributeValues
+      })
+    );
+  } catch (error) {
+    console.error('Failed to update access tracking for submission', { error, submissionId });
+  }
 
   if (isFirstAccess && studentEmail && SES_SOURCE_EMAIL) {
-    const accessedAt = new Date().toISOString();
-
-    // Update DynamoDB with first access timestamp
-    try {
-      await dynamodb.send(
-        new UpdateCommand({
-          TableName: ASSIGNMENTS_TABLE,
-          Key: { submissionId },
-          UpdateExpression: 'SET #firstAccessedAt = :accessedAt',
-          ExpressionAttributeNames: {
-            '#firstAccessedAt': 'firstAccessedAt'
-          },
-          ExpressionAttributeValues: {
-            ':accessedAt': accessedAt
-          }
-        })
-      );
-    } catch (error) {
-      console.error('Failed to update firstAccessedAt', { error, submissionId });
-    }
-
     // Fetch course details for the notification
     let courseDisplayName = courseId;
     let educatorName: string | undefined;

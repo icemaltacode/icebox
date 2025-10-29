@@ -73,8 +73,10 @@ export type UploadStatusResponse = {
 
 const addAuthHeader = (headers?: Record<string, string>) => {
   const token = getVleAuthToken();
-  if (!token) return headers;
-  return { ...(headers ?? {}), Authorization: `Bearer ${token}` };
+  const requireToken = import.meta.env.VITE_REQUIRE_VLE_TOKEN === 'true';
+  const authToken = token || (requireToken ? null : 'dev-access');
+  if (!authToken) return headers;
+  return { ...(headers ?? {}), Authorization: `Bearer ${authToken}` };
 };
 
 export const createUploadSession = async (payload: CreateUploadSessionPayload) => {

@@ -51,24 +51,24 @@ import {
 
 import type { JSX } from 'react';
 
-type FileSystemEntry = {
+type DropFileSystemEntry = {
   isFile: boolean;
   isDirectory: boolean;
   name: string;
   fullPath: string;
   file: (callback: (file: File) => void, errorCallback?: (error: unknown) => void) => void;
-  createReader?: () => FileSystemDirectoryReader;
+  createReader?: () => DropFileSystemDirectoryReader;
   readEntries?: () => void;
 };
 
-type FileSystemDirectoryReader = {
+type DropFileSystemDirectoryReader = {
   readEntries: (
-    successCallback: (entries: FileSystemEntry[]) => void,
+    successCallback: (entries: DropFileSystemEntry[]) => void,
     errorCallback?: (error: unknown) => void
   ) => void;
 };
 
-const traverseEntry = (entry: FileSystemEntry, path: string): Promise<File[]> =>
+const traverseEntry = (entry: DropFileSystemEntry, path: string): Promise<File[]> =>
   new Promise((resolve, reject) => {
     if (entry.isFile) {
       entry.file(
@@ -84,7 +84,7 @@ const traverseEntry = (entry: FileSystemEntry, path: string): Promise<File[]> =>
       );
     } else if (entry.isDirectory && entry.createReader) {
       const reader = entry.createReader();
-      const allEntries: FileSystemEntry[] = [];
+      const allEntries: DropFileSystemEntry[] = [];
 
       const readBatch = () => {
         reader.readEntries(
@@ -121,7 +121,7 @@ const collectFilesFromEvent = async (event: DropEvent): Promise<File[]> => {
     for (const item of Array.from(items)) {
       const entry = item.webkitGetAsEntry?.();
       if (entry) {
-        entryPromises.push(traverseEntry(entry as FileSystemEntry, ''));
+        entryPromises.push(traverseEntry(entry as unknown as DropFileSystemEntry, ''));
       } else {
         const file = item.getAsFile?.();
         if (file) {

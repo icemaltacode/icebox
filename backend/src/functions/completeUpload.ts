@@ -105,7 +105,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
   if (payload.studentEmail) {
     expressionAttributeNames['#studentEmail'] = 'studentEmail';
-    expressionAttributeValues[':studentEmail'] = payload.studentEmail;
+    expressionAttributeValues[':studentEmail'] = payload.studentEmail.trim();
     setExpressions.push('#studentEmail = :studentEmail');
   }
   if (payload.studentName) {
@@ -115,7 +115,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
   if (payload.educatorEmails) {
     expressionAttributeNames['#educatorEmails'] = 'educatorEmails';
-    expressionAttributeValues[':educatorEmails'] = payload.educatorEmails;
+    const normalizedEducatorEmails = payload.educatorEmails
+      .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+      .filter((value) => value.length > 0);
+    expressionAttributeValues[':educatorEmails'] = Array.from(new Set(normalizedEducatorEmails));
     setExpressions.push('#educatorEmails = :educatorEmails');
   }
 

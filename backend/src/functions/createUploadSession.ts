@@ -1,11 +1,11 @@
 import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
-import { PutCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuid } from 'uuid';
 
 import { getDynamoDbDocumentClient, getS3Client } from '../lib/aws';
-import { ASSIGNMENTS_BUCKET, ASSIGNMENTS_TABLE } from '../lib/env';
+import { ASSIGNMENTS_BUCKET, ASSIGNMENTS_TABLE, COURSES_TABLE } from '../lib/env';
 
 type CreateUploadSessionBody = {
   studentId?: string;
@@ -56,6 +56,49 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }));
 
   const submissionId = uuid();
+  const dynamodb = getDynamoDbDocumentClient();
+  let courseNameSnapshot: string | null = null;
+  let courseEducatorName: string | null = null;
+  let courseEducatorEmail: string | null = null;
+
+  try {
+    const courseResult = await dynamodb.send(
+      new GetCommand({
+        TableName: COURSES_TABLE,
+        Key: { courseCode: courseId }
+      })
+    );
+
+    if (courseResult.Item) {
+      courseNameSnapshot =
+        typeof courseResult.Item.courseName === 'string' && courseResult.Item.courseName.trim()
+          ? courseResult.Item.courseName.trim()
+          : null;
+      courseEducatorName =
+        typeof courseResult.Item.educatorName === 'string' && courseResult.Item.educatorName.trim()
+          ? courseResult.Item.educatorName.trim()
+          : null;
+      courseEducatorEmail =
+        typeof courseResult.Item.educatorEmail === 'string' && courseResult.Item.educatorEmail.trim()
+          ? courseResult.Item.educatorEmail.trim().toLowerCase()
+          : null;
+    }
+  } catch (error) {
+    console.error('Failed to resolve course details for submission', { error, courseId, submissionId });
+  }
+
+  const normalizedEducatorEmails = Array.isArray(educatorEmails)
+    ? educatorEmails
+        .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+        .filter((value) => value.length > 0)
+    : [];
+
+  if (normalizedEducatorEmails.length === 0 && courseEducatorEmail) {
+    normalizedEducatorEmails.push(courseEducatorEmail);
+  }
+
+  const uniqueEducatorEmails = Array.from(new Set(normalizedEducatorEmails));
+
   const studentSegment = studentId ?? studentEmail ?? studentName ?? 'unknown-student';
   const normalizedStudentSegment = encodeURIComponent(studentSegment);
   const baseKey = `${courseId}/${normalizedStudentSegment}/${submissionId}`;
@@ -104,7 +147,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   const filesForStorage = uploadTargets.map(({ record }) => record);
 
-  const dynamodb = getDynamoDbDocumentClient();
   await dynamodb.send(
     new PutCommand({
       TableName: ASSIGNMENTS_TABLE,
@@ -114,12 +156,17 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         studentName: studentName ?? null,
         courseId,
         createdAt: timestamp,
+        updatedAt: timestamp,
         comment: comment ?? null,
         status: 'PENDING',
         files: filesForStorage,
         studentEmail: studentEmail ?? null,
-        educatorEmails: educatorEmails ?? [],
-        downloadBaseUrl
+        educatorEmails: uniqueEducatorEmails,
+        downloadBaseUrl,
+        courseName: courseNameSnapshot,
+        courseEducatorName,
+        courseEducatorEmail,
+        reminderCount: 0
       }
     })
   );

@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { Notebook, Users } from 'lucide-react';
+import { ClipboardList, Notebook, Users } from 'lucide-react';
 
 import { ModeToggle } from '@/components/mode-toggle';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,12 @@ import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/providers/admin-auth-provider';
 
 const navItems = [
+  {
+    to: 'submissions',
+    icon: ClipboardList,
+    label: 'Submissions',
+    description: 'Monitor uploads and lifecycle'
+  },
   {
     to: 'assignments',
     icon: Notebook,

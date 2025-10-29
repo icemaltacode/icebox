@@ -1,6 +1,9 @@
 import type { AWS } from '@serverless/typescript';
 
 const stage = '${opt:stage, env:STAGE, "dev"}';
+const resolvedStage = process.env.SLS_STAGE ?? process.env.STAGE ?? 'dev';
+const shouldUseVleAuthorizer = resolvedStage !== 'dev';
+const vleAuthorizerConfig = shouldUseVleAuthorizer ? { authorizer: 'vleToken' } : {};
 
 const serverlessConfiguration = {
   service: 'icebox',
@@ -36,7 +39,14 @@ const serverlessConfiguration = {
         statements: [
           {
             Effect: 'Allow',
-            Action: ['s3:PutObject', 's3:GetObject', 's3:AbortMultipartUpload', 's3:ListMultipartUploadParts', 's3:ListBucket'],
+            Action: [
+              's3:PutObject',
+              's3:GetObject',
+              's3:DeleteObject',
+              's3:AbortMultipartUpload',
+              's3:ListMultipartUploadParts',
+              's3:ListBucket'
+            ],
             Resource: [
               'arn:aws:s3:::${self:custom.resources.assignmentsBucketName}',
               'arn:aws:s3:::${self:custom.resources.assignmentsBucketName}/*'
@@ -57,7 +67,7 @@ const serverlessConfiguration = {
           },
           {
             Effect: 'Allow',
-            Action: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:GetItem', 'dynamodb:Query'],
+            Action: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan'],
             Resource: [
               { 'Fn::GetAtt': ['AssignmentsTable', 'Arn'] },
               {
@@ -130,9 +140,14 @@ const serverlessConfiguration = {
           },
           identitySource: [
             '$request.header.Authorization',
-            '$request.header.authorization'
+            '$request.header.authorization',
+            '$request.header.Host',
+            '$request.header.host',
+            '$context.http.path',
+            '$request.querystring.vleBypass'
           ],
-          enableSimpleResponses: true
+          enableSimpleResponses: true,
+          resultTtlInSeconds: 0
         }
       },
       cors: {
@@ -211,7 +226,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'post',
             path: '/uploads/sessions',
-            authorizer: 'vleToken'
+            ...vleAuthorizerConfig
           }
         }
       ]
@@ -225,7 +240,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'post',
             path: '/uploads/{submissionId}/complete',
-            authorizer: 'vleToken'
+            ...vleAuthorizerConfig
           }
         }
       ]
@@ -237,7 +252,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/uploads/{submissionId}',
-            authorizer: 'vleToken'
+            ...vleAuthorizerConfig
           }
         }
       ]
@@ -263,7 +278,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/students/{studentId}/submissions',
-            authorizer: 'vleToken'
+            ...vleAuthorizerConfig
           }
         }
       ]
@@ -367,6 +382,39 @@ const serverlessConfiguration = {
         }
       ]
     },
+    adminListSubmissions: {
+      handler: 'src/functions/admin/listSubmissions.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'get',
+            path: '/admin/submissions'
+          }
+        }
+      ]
+    },
+    adminRemindSubmission: {
+      handler: 'src/functions/admin/remindSubmission.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'post',
+            path: '/admin/submissions/{submissionId}/remind'
+          }
+        }
+      ]
+    },
+    adminDeleteSubmission: {
+      handler: 'src/functions/admin/deleteSubmission.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'delete',
+            path: '/admin/submissions/{submissionId}'
+          }
+        }
+      ]
+    },
     listPublicCourses: {
       handler: 'src/functions/listPublicCourses.handler',
       events: [
@@ -374,7 +422,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/courses',
-            authorizer: 'vleToken'
+            ...vleAuthorizerConfig
           }
         }
       ]

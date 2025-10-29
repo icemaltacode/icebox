@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -48,7 +49,9 @@ import type {
   InviteAdminUserPayload,
   SaveCoursePayload,
   UpdateAdminUserPayload,
-  AdminUser
+  AdminUser,
+  ListCoursesResponse,
+  ListAdminUsersResponse
 } from '@/lib/admin-api';
 import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/providers/admin-auth-provider';
@@ -263,7 +266,7 @@ const CourseAssignmentsView = () => {
     isFetching,
     isError,
     error
-  } = useQuery({
+  } = useQuery<ListCoursesResponse>({
     queryKey,
     queryFn: () =>
       adminApi.listCourses({
@@ -273,7 +276,7 @@ const CourseAssignmentsView = () => {
         sortField,
         sortOrder
       }),
-    keepPreviousData: true
+    placeholderData: (previousData) => previousData
   });
 
   const createMutation = useMutation({
@@ -845,7 +848,7 @@ export const AdminUsersPage = () => {
     isFetching,
     isError,
     error
-  } = useQuery({
+  } = useQuery<ListAdminUsersResponse>({
     queryKey,
     queryFn: () =>
       adminApi.listAdminUsers({
@@ -853,7 +856,7 @@ export const AdminUsersPage = () => {
         nextToken: currentToken ?? undefined,
         limit
       }),
-    keepPreviousData: true
+    placeholderData: (previousData) => previousData
   });
 
   const inviteMutation = useMutation<unknown, unknown, InviteAdminUserPayload>({
