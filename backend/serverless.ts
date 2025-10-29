@@ -28,8 +28,8 @@ const serverlessConfiguration = {
       ADMIN_USER_POOL_REGION: '${self:provider.region}',
       ARCHIVE_QUEUE_URL: { Ref: 'ArchiveQueue' } as unknown as string,
       ADMIN_PORTAL_URL: '${env:ADMIN_PORTAL_URL, "https://icebox.icecampus.com/admin"}',
-      VLE_REFERRER_CHECK_ENABLED: '${env:VLE_REFERRER_CHECK_ENABLED, "false"}',
-      VLE_ALLOWED_REFERRERS: '${env:VLE_ALLOWED_REFERRERS, "https://my.icecampus.com"}'
+      VLE_TOKEN_CHECK: '${env:VLE_TOKEN_CHECK, "false"}',
+      VLE_TOKENS_TABLE: '${self:custom.resources.vleTokensTableName}'
     },
     iam: {
       role: {
@@ -81,6 +81,17 @@ const serverlessConfiguration = {
           },
           {
             Effect: 'Allow',
+            Action: [
+              'dynamodb:GetItem',
+              'dynamodb:PutItem',
+              'dynamodb:UpdateItem',
+              'dynamodb:DeleteItem',
+              'dynamodb:Scan'
+            ],
+            Resource: [{ 'Fn::GetAtt': ['VleTokensTable', 'Arn'] }]
+          },
+          {
+            Effect: 'Allow',
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
             Resource: '*'
           },
@@ -112,28 +123,16 @@ const serverlessConfiguration = {
     },
     httpApi: {
       authorizers: {
-        vleReferer: {
+        vleToken: {
           type: 'request',
           functionArn: {
             'Fn::GetAtt': ['VleAuthorizerLambdaFunction', 'Arn']
           },
           identitySource: [
-            '$request.header.referer',
-            '$request.header.Referer',
-            '$request.header.origin',
-            '$request.header.Origin'
+            '$request.header.Authorization',
+            '$request.header.authorization'
           ],
           enableSimpleResponses: true
-        }
-      },
-      routeSettings: {
-        'POST /uploads/sessions': {
-          throttlingBurstLimit: 3,
-          throttlingRateLimit: 0.01
-        },
-        'POST /uploads/{submissionId}/complete': {
-          throttlingBurstLimit: 3,
-          throttlingRateLimit: 0.01
         }
       },
       cors: {
@@ -156,7 +155,8 @@ const serverlessConfiguration = {
     resources: {
       assignmentsBucketName: 'icebox-${sls:stage}-assignments',
       assignmentsTableName: 'icebox-${sls:stage}-metadata',
-      coursesTableName: 'icebox-${sls:stage}-courses'
+      coursesTableName: 'icebox-${sls:stage}-courses',
+      vleTokensTableName: 'icebox-${sls:stage}-vle-tokens'
     }
   },
   build: {
@@ -176,6 +176,34 @@ const serverlessConfiguration = {
     vleAuthorizer: {
       handler: 'src/functions/vleAuthorizer.handler'
     },
+    createVleShortToken: {
+      handler: 'src/functions/createVleShortToken.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'post',
+            path: '/vle-token/request'
+          }
+        },
+        {
+          httpApi: {
+            method: 'options',
+            path: '/vle-token/request'
+          }
+        }
+      ]
+    },
+    exchangeVleToken: {
+      handler: 'src/functions/exchangeVleToken.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'post',
+            path: '/vle-token/exchange'
+          }
+        }
+      ]
+    },
     createUploadSession: {
       handler: 'src/functions/createUploadSession.handler',
       events: [
@@ -183,7 +211,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'post',
             path: '/uploads/sessions',
-            authorizer: 'vleReferer'
+            authorizer: 'vleToken'
           }
         }
       ]
@@ -197,7 +225,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'post',
             path: '/uploads/{submissionId}/complete',
-            authorizer: 'vleReferer'
+            authorizer: 'vleToken'
           }
         }
       ]
@@ -209,7 +237,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/uploads/{submissionId}',
-            authorizer: 'vleReferer'
+            authorizer: 'vleToken'
           }
         }
       ]
@@ -235,7 +263,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/students/{studentId}/submissions',
-            authorizer: 'vleReferer'
+            authorizer: 'vleToken'
           }
         }
       ]
@@ -346,7 +374,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/courses',
-            authorizer: 'vleReferer'
+            authorizer: 'vleToken'
           }
         }
       ]
@@ -365,6 +393,27 @@ const serverlessConfiguration = {
   },
   resources: {
     Resources: {
+      VleTokensTable: {
+        Type: 'AWS::DynamoDB::Table',
+        Properties: {
+          TableName: '${self:custom.resources.vleTokensTableName}',
+          BillingMode: 'PAY_PER_REQUEST',
+          AttributeDefinitions: [
+            { AttributeName: 'token', AttributeType: 'S' }
+          ],
+          KeySchema: [
+            { AttributeName: 'token', KeyType: 'HASH' }
+          ],
+          TimeToLiveSpecification: {
+            AttributeName: 'ttl',
+            Enabled: true
+          },
+          Tags: [
+            { Key: 'Project', Value: 'ICEBox' },
+            { Key: 'Stage', Value: '${sls:stage}' }
+          ]
+        }
+      },
       AssignmentsBucket: {
         Type: 'AWS::S3::Bucket',
         Properties: {

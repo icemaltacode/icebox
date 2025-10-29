@@ -18,9 +18,11 @@ import {
   createUploadSession,
   getUploadStatus,
   listPublicCourses,
+  exchangeVleToken,
   type PublicCourse,
   type UploadStatusResponse
 } from '@/lib/api';
+import { getStoredVleToken, setStoredVleToken } from '@/lib/vleToken';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -239,35 +241,10 @@ export const UploadPage = () => {
     [courseCodeParam, studentEmailParam, studentIdParam, studentNameParam]
   );
 
-  const requireVleReferrer = import.meta.env.VITE_REQUIRE_VLE_REFERRER === 'true';
-  const allowedVleReferrersRaw = import.meta.env.VITE_ALLOWED_VLE_REFERRERS ?? 'https://my.icecampus.com';
-  const allowedVleReferrers = useMemo(
-    () =>
-      allowedVleReferrersRaw
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    [allowedVleReferrersRaw]
-  );
-  const [referrerAllowed, setReferrerAllowed] = useState<boolean>(() => !requireVleReferrer);
-  const [referrerChecked, setReferrerChecked] = useState<boolean>(() => !requireVleReferrer);
-
-  useEffect(() => {
-    if (!requireVleReferrer) {
-      return;
-    }
-
-    if (typeof document === 'undefined') {
-      setReferrerAllowed(false);
-      setReferrerChecked(true);
-      return;
-    }
-
-    const referrer = document.referrer ?? '';
-    const allowed = allowedVleReferrers.some((entry) => referrer.startsWith(entry));
-    setReferrerAllowed(allowed);
-    setReferrerChecked(true);
-  }, [allowedVleReferrers, requireVleReferrer]);
+  const requireVleToken = import.meta.env.VITE_REQUIRE_VLE_TOKEN === 'true';
+  const [tokenChecked, setTokenChecked] = useState<boolean>(() => !requireVleToken);
+  const [tokenValid, setTokenValid] = useState<boolean>(() => !requireVleToken);
+  const [tokenError, setTokenError] = useState<string | null>(null);
 
   const [form, setForm] = useState<UploadFormState>(initialFormState);
   const [files, setFiles] = useState<UploadItem[]>([]);
@@ -275,6 +252,70 @@ export const UploadPage = () => {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadStatusResponse | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!requireVleToken || tokenChecked) {
+      return;
+    }
+
+    const storedToken = getStoredVleToken();
+    if (storedToken) {
+      setTokenValid(true);
+      setTokenError(null);
+      setTokenChecked(true);
+      return;
+    }
+
+    const shortToken = searchParams.get('token');
+    if (!shortToken) {
+      setTokenValid(false);
+      setTokenError('Access token missing. Please open the upload link from Circle Learn.');
+      setTokenChecked(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const exchange = async () => {
+      try {
+        const longToken = await exchangeVleToken(shortToken);
+        if (cancelled) {
+          return;
+        }
+
+        setStoredVleToken(longToken);
+        setTokenValid(true);
+        setTokenError(null);
+
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('token');
+          window.history.replaceState(window.history.state, '', url.toString());
+        } catch (historyError) {
+          console.warn('[ICEBox] Failed to clean URL token parameter', historyError);
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error('[ICEBox] Failed to exchange VLE token', error);
+        setStoredVleToken(null);
+        setTokenValid(false);
+        setTokenError('We could not verify your access. Please reopen this page from Circle Learn.');
+      } finally {
+        if (!cancelled) {
+          setTokenChecked(true);
+        }
+      }
+    };
+
+    void exchange();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [requireVleToken, searchParams, setTokenError, tokenChecked]);
 
   useEffect(() => {
     setForm(initialFormState);
@@ -292,7 +333,8 @@ export const UploadPage = () => {
   } = useQuery({
     queryKey: ['publicCourses'],
     queryFn: listPublicCourses,
-    staleTime: 5 * 60 * 1000
+    staleTime: 5 * 60 * 1000,
+    enabled: !requireVleToken || (tokenChecked && tokenValid)
   });
 
   const courseGroups = useMemo(() => {
@@ -753,15 +795,31 @@ export const UploadPage = () => {
     void uploadFiles();
   };
 
-  if (requireVleReferrer && referrerChecked && !referrerAllowed) {
+  if (requireVleToken && !tokenChecked) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6 py-12">
+        <Card className="bg-card/80 shadow-sm">
+          <CardHeader className="flex flex-col items-center gap-3 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <CardTitle className="text-lg">Verifying access…</CardTitle>
+            <CardDescription>
+              Please stay on this page while we confirm your access from Circle Learn.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  if (requireVleToken && tokenChecked && !tokenValid) {
     return (
       <div className="mx-auto max-w-3xl space-y-6 py-12">
         <Card className="bg-card/80 shadow-sm">
           <CardHeader>
             <CardTitle>Launch ICEBox from Circle Learn</CardTitle>
             <CardDescription>
-              Please access this upload page via Circle Learn (https://my.icecampus.com). If you
-              believe you received this message in error, contact your administrator.
+              {tokenError ??
+                'Please access this upload page via Circle Learn (https://my.icecampus.com). If you believe you received this message in error, contact your administrator.'}
             </CardDescription>
           </CardHeader>
         </Card>

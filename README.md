@@ -148,8 +148,7 @@ Refer to [`docs/deploy.md`](docs/deploy.md) for certificate creation, CloudFront
 | `COURSES_TABLE`         | DynamoDB table for course assignments                                                                     |
 | `SECRETS_PREFIX`        | Optional Secrets Manager prefix (defaults to `/icebox/<stage>/`)                                          |
 | `ADMIN_PORTAL_URL`      | URL rendered in admin invite/reset emails (defaults to `https://icebox.icecampus.com/admin`)              |
-| `VLE_REFERRER_CHECK_ENABLED` | Toggle to enforce that student uploads originate from Circle (set `true` in prod, default `false`) |
-| `VLE_ALLOWED_REFERRERS` | Comma-separated list of allowed referrer/origin prefixes (defaults to `https://my.icecampus.com`)         |
+| `VLE_TOKEN_CHECK`        | Toggle to enforce Circle launch tokens (set `true` in prod, default `false`)                            |
 | `SERVERLESS_ORG/APP`    | Override Serverless org/app if you use a different Org/App                                               |
 | Cognito env vars        | Injected automatically from CloudFormation (User Pool ID, Client ID, Region, Audience)                    |
 
@@ -161,8 +160,7 @@ Refer to [`docs/deploy.md`](docs/deploy.md) for certificate creation, CloudFront
 | `VITE_ADMIN_USER_POOL_ID`         | Cognito User Pool ID for admin authentication                        |
 | `VITE_ADMIN_USER_POOL_CLIENT_ID`  | Cognito app client id                                                |
 | `VITE_ADMIN_USER_POOL_REGION`     | Cognito region (optional if same as pool id prefix)                  |
-| `VITE_REQUIRE_VLE_REFERRER`       | If `'true'`, block the UI unless the visitor launched from Circle    |
-| `VITE_ALLOWED_VLE_REFERRERS`      | Comma-separated list of allowed referrer prefixes (defaults to `https://my.icecampus.com`) |
+| `VITE_REQUIRE_VLE_TOKEN`          | If `'true'`, require a valid launch token before showing the upload UI |
 
 ---
 

@@ -7,14 +7,40 @@
   1. Include this script in the SITE settings in Circle.
   2. Ensure that the ICEBox links contain the following placeholders in their href attributes:
 
-  https://icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID&studentName=PLACEHOLDER_NAME
+  https://icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID&studentName=PLACEHOLDER_NAME&token=PLACEHOLDER_TOKEN
 */
 
 /* Script starts here. Copy as-is - do not add <script> tags */
 
 (() => {
-  const SEL = 'a[href*="studentEmail=PLACEHOLDER_EMAIL"][href*="class=PLACEHOLDER_CLASS"]';
+  // Update this URL if you are working against a different ICEBox API stage.
+  const API_BASE_URL = 'https://uav5qzlbbk.execute-api.eu-south-1.amazonaws.com';
+  const SEL =
+    'a[href*="studentEmail=PLACEHOLDER_EMAIL"][href*="class=PLACEHOLDER_CLASS"][href*="studentId=PLACEHOLDER_ID"][href*="studentName=PLACEHOLDER_NAME"][href*="token=PLACEHOLDER_TOKEN"]';
   let done = false, observer, tid;
+
+  const requestShortToken = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/vle-token/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unexpected status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data?.token) {
+        throw new Error('Token missing in response');
+      }
+
+      return data.token;
+    } catch (error) {
+      console.error('[Icebox Link Updater] Failed to fetch short token', error);
+      return null;
+    }
+  };
 
   const getEmail = () => {
     try {
@@ -60,11 +86,42 @@
     links.forEach(a => {
       try {
         const u = new URL(a.href, location.href);
-        u.searchParams.set('studentEmail', encodeURIComponent(email));
-        u.searchParams.set('class', encodeURIComponent(cls));
-        if (studentId) u.searchParams.set('studentId', encodeURIComponent(studentId));
-        if (studentName) u.searchParams.set('studentName', encodeURIComponent(studentName));
+        u.searchParams.set('studentEmail', email);
+        u.searchParams.set('class', cls);
+        if (studentId) u.searchParams.set('studentId', studentId);
+        if (studentName) u.searchParams.set('studentName', studentName);
+        u.searchParams.delete('token');
         a.href = u.toString();
+        if (!a.dataset.iceboxHandled) {
+          const ensureReferrer = () => {
+            a.removeAttribute('rel');
+            a.removeAttribute('referrerpolicy');
+          };
+
+          ensureReferrer();
+          a.addEventListener('mouseenter', ensureReferrer);
+          a.addEventListener('focus', ensureReferrer);
+          a.addEventListener('touchstart', ensureReferrer, { passive: true });
+          a.addEventListener('click', async (event) => {
+            ensureReferrer();
+            event.preventDefault();
+            try {
+              const shortToken = await requestShortToken();
+              if (!shortToken) {
+                alert('We could not prepare the ICEBox upload link. Please try again.');
+                return;
+              }
+
+              const nav = new URL(a.href, location.href);
+              nav.searchParams.set('token', shortToken);
+              window.open(nav.toString(), '_blank', 'noopener');
+            } catch (err) {
+              console.error('[Icebox Link Updater] Failed to request short token', err);
+              alert('We could not prepare the ICEBox upload link. Please try again.');
+            }
+          });
+          a.dataset.iceboxHandled = 'true';
+        }
         console.log('[Icebox Link Updater] Updated link →', a.href);
       } catch (e) {
         console.warn('[Icebox Link Updater] Failed updating a link:', e);

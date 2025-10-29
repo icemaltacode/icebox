@@ -1,4 +1,6 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
+
+import { getVleAuthToken } from './vleToken';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -69,29 +71,51 @@ export type UploadStatusResponse = {
   }>;
 };
 
+const addAuthHeader = (headers?: Record<string, string>) => {
+  const token = getVleAuthToken();
+  if (!token) return headers;
+  return { ...(headers ?? {}), Authorization: `Bearer ${token}` };
+};
+
 export const createUploadSession = async (payload: CreateUploadSessionPayload) => {
-  const { data } = await api.post<CreateUploadSessionResponse>('/uploads/sessions', payload);
+  const headers = addAuthHeader();
+  const config: AxiosRequestConfig | undefined = headers ? { headers } : undefined;
+  const { data } = await api.post<CreateUploadSessionResponse>('/uploads/sessions', payload, config);
   return data;
 };
 
 export const completeUpload = async (payload: CompleteUploadPayload) => {
   const { submissionId, ...rest } = payload;
+  const headers = addAuthHeader();
+  const config: AxiosRequestConfig | undefined = headers ? { headers } : undefined;
   const { data } = await api.post<CompleteUploadResponse>(
     `/uploads/${submissionId}/complete`,
-    rest
+    rest,
+    config
   );
   return data;
 };
 
 export const getUploadStatus = async (submissionId: string) => {
-  const { data } = await api.get<UploadStatusResponse>(`/uploads/${submissionId}`);
+  const headers = addAuthHeader();
+  const config: AxiosRequestConfig | undefined = headers ? { headers } : undefined;
+  const { data } = await api.get<UploadStatusResponse>(`/uploads/${submissionId}`, config);
   return data;
 };
 
 export const listStudentSubmissions = async (studentId: string, courseId?: string) => {
+  const headers = addAuthHeader();
+  let config: AxiosRequestConfig | undefined;
+  if (courseId) {
+    config = { params: { courseId } };
+  }
+  if (headers) {
+    config = { ...(config ?? {}), headers };
+  }
+
   const { data } = await api.get<{ items: unknown[] }>(
     `/students/${studentId}/submissions`,
-    courseId ? { params: { courseId } } : undefined
+    config
   );
   return data.items;
 };
@@ -104,6 +128,13 @@ export type PublicCourse = {
 };
 
 export const listPublicCourses = async (): Promise<PublicCourse[]> => {
-  const { data } = await api.get<{ items: PublicCourse[] }>('/courses');
+  const headers = addAuthHeader();
+  const config: AxiosRequestConfig | undefined = headers ? { headers } : undefined;
+  const { data } = await api.get<{ items: PublicCourse[] }>('/courses', config);
   return data.items;
+};
+
+export const exchangeVleToken = async (shortToken: string): Promise<string> => {
+  const { data } = await api.post<{ token: string }>('/vle-token/exchange', { token: shortToken });
+  return data.token;
 };

@@ -23,3 +23,5 @@ export const ADMIN_USER_POOL_AUDIENCE =
   getEnv('ADMIN_USER_POOL_AUDIENCE', false) ?? ADMIN_USER_POOL_CLIENT_ID ?? undefined;
 
 export const ensureOptionalEnv = (key: string): string | undefined => getEnv(key, false);
+export const VLE_TOKEN_CHECK = (getEnv('VLE_TOKEN_CHECK', false) ?? 'false').toLowerCase() === 'true';
+export const VLE_TOKENS_TABLE = getEnv('VLE_TOKENS_TABLE', false);
