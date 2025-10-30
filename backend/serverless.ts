@@ -140,12 +140,7 @@ const serverlessConfiguration = {
             'Fn::GetAtt': ['VleAuthorizerLambdaFunction', 'Arn']
           },
           identitySource: [
-            '$request.header.Authorization',
-            '$request.header.authorization',
-            '$request.header.Host',
-            '$request.header.host',
-            '$context.http.path',
-            '$request.querystring.vleBypass'
+            '$request.header.Authorization'
           ],
           enableSimpleResponses: true,
           resultTtlInSeconds: 0
@@ -215,6 +210,12 @@ const serverlessConfiguration = {
         {
           httpApi: {
             method: 'post',
+            path: '/vle-token/exchange'
+          }
+        },
+        {
+          httpApi: {
+            method: 'options',
             path: '/vle-token/exchange'
           }
         }

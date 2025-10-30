@@ -41,6 +41,12 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const shortToken = generateToken();
   await storeToken(shortToken, 'short', SHORT_TTL_SECONDS);
 
+  console.log('Generated short VLE token', {
+    shortToken,
+    origin: originHeader,
+    ttlSeconds: SHORT_TTL_SECONDS
+  });
+
   return {
     statusCode: 200,
     headers: corsHeaders,

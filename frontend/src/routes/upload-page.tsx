@@ -206,7 +206,7 @@ const statusMeta: Record<
 };
 
 export const UploadPage = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const decodeParam = (value: string | null): string => {
     if (!value) {
       return '';
@@ -258,64 +258,65 @@ export const UploadPage = () => {
       return;
     }
 
-    const storedToken = getStoredVleToken();
-    if (storedToken) {
-      setTokenValid(true);
-      setTokenError(null);
-      setTokenChecked(true);
-      return;
-    }
+    let cancelled = false;
 
-    const shortToken = searchParams.get('token');
-    if (!shortToken) {
+    const initialise = async () => {
+      const shortToken = searchParams.get('token');
+
+      if (shortToken) {
+        try {
+          const longToken = await exchangeVleToken(shortToken);
+          if (cancelled) {
+            return;
+          }
+
+          setStoredVleToken(longToken);
+          setTokenValid(true);
+          setTokenError(null);
+
+          try {
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.delete('token');
+            setSearchParams(nextParams, { replace: true });
+          } catch (historyError) {
+            console.warn('[ICEBox] Failed to clean URL token parameter', historyError);
+          }
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          console.error('[ICEBox] Failed to exchange VLE token', error);
+          setStoredVleToken(null);
+          setTokenValid(false);
+          setTokenError('We could not verify your access. Please reopen this page from Circle Learn.');
+        } finally {
+          if (!cancelled) {
+            setTokenChecked(true);
+          }
+        }
+        return;
+      }
+
+      const storedToken = getStoredVleToken();
+      if (storedToken) {
+        setTokenValid(true);
+        setTokenError(null);
+        setTokenChecked(true);
+        return;
+      }
+
       setTokenValid(false);
       setTokenError('Access token missing. Please open the upload link from Circle Learn.');
       setTokenChecked(true);
-      return;
-    }
-
-    let cancelled = false;
-
-    const exchange = async () => {
-      try {
-        const longToken = await exchangeVleToken(shortToken);
-        if (cancelled) {
-          return;
-        }
-
-        setStoredVleToken(longToken);
-        setTokenValid(true);
-        setTokenError(null);
-
-        try {
-          const url = new URL(window.location.href);
-          url.searchParams.delete('token');
-          window.history.replaceState(window.history.state, '', url.toString());
-        } catch (historyError) {
-          console.warn('[ICEBox] Failed to clean URL token parameter', historyError);
-        }
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        console.error('[ICEBox] Failed to exchange VLE token', error);
-        setStoredVleToken(null);
-        setTokenValid(false);
-        setTokenError('We could not verify your access. Please reopen this page from Circle Learn.');
-      } finally {
-        if (!cancelled) {
-          setTokenChecked(true);
-        }
-      }
     };
 
-    void exchange();
+    void initialise();
 
     return () => {
       cancelled = true;
     };
-  }, [requireVleToken, searchParams, setTokenError, tokenChecked]);
+  }, [requireVleToken, searchParams, setSearchParams, tokenChecked]);
 
   useEffect(() => {
     setForm(initialFormState);
@@ -713,7 +714,18 @@ export const UploadPage = () => {
         }))
       };
 
-      const session = await createSessionMutation.mutateAsync(payload);
+      let session;
+      try {
+        session = await createSessionMutation.mutateAsync(payload);
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response?.status === 401) {
+          setStoredVleToken(null);
+          setTokenChecked(false);
+          setTokenValid(false);
+          setTokenError('Your access expired. Please reopen the upload page from Circle Learn.');
+        }
+        throw err;
+      }
 
       const snapshot = [...files];
       for (let index = 0; index < snapshot.length; index += 1) {
@@ -751,13 +763,23 @@ export const UploadPage = () => {
         setStatusMessage('Finalising upload…');
       }
 
-      await completeUploadMutation.mutateAsync({
+      try {
+        await completeUploadMutation.mutateAsync({
         submissionId: session.submissionId,
         comment: form.comment.trim() || undefined,
         studentEmail: trimmedStudentEmail || undefined,
         studentName: trimmedStudentName || undefined,
         educatorEmails: educatorEmailsPayload
-      });
+        });
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response?.status === 401) {
+          setStoredVleToken(null);
+          setTokenChecked(false);
+          setTokenValid(false);
+          setTokenError('Your access expired. Please reopen the upload page from Circle Learn.');
+        }
+        throw err;
+      }
 
       setStatusMessage('Processing upload…');
 
