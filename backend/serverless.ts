@@ -4,7 +4,7 @@ import type { AWS } from '@serverless/typescript';
 const stage = '${opt:stage, env:STAGE, "dev"}';
 const resolvedStage = process.env.SLS_STAGE ?? process.env.STAGE ?? 'dev';
 const shouldUseVleAuthorizer = resolvedStage !== 'dev';
-const vleAuthorizerConfig = shouldUseVleAuthorizer ? { authorizer: 'vleToken' } : {};
+const defaultAuthorizerConfig = shouldUseVleAuthorizer ? { authorizer: 'vleToken' } : {};
 
 const serverlessConfiguration = {
   service: 'icebox',
@@ -227,7 +227,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'post',
             path: '/uploads/sessions',
-            ...vleAuthorizerConfig
+            ...defaultAuthorizerConfig
           }
         }
       ]
@@ -241,7 +241,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'post',
             path: '/uploads/{submissionId}/complete',
-            ...vleAuthorizerConfig
+            ...defaultAuthorizerConfig
           }
         }
       ]
@@ -253,7 +253,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/uploads/{submissionId}',
-            ...vleAuthorizerConfig
+            ...defaultAuthorizerConfig
           }
         }
       ]
@@ -279,7 +279,7 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/students/{studentId}/submissions',
-            ...vleAuthorizerConfig
+            ...defaultAuthorizerConfig
           }
         }
       ]
@@ -422,8 +422,7 @@ const serverlessConfiguration = {
         {
           httpApi: {
             method: 'get',
-            path: '/courses',
-            ...vleAuthorizerConfig
+            path: '/courses'
           }
         }
       ]

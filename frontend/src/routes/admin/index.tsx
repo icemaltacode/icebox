@@ -6,6 +6,7 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Edit3,
   EllipsisVertical,
   KeyRound,
@@ -40,8 +41,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { useAdminApi } from '@/hooks/use-admin-api';
 import { useToast } from '@/hooks/use-toast';
 import type {
@@ -399,21 +409,27 @@ const CourseAssignmentsView = () => {
             />
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="admin-page-size" className="text-sm text-muted-foreground">
-              Rows:
-            </label>
-            <select
-              id="admin-page-size"
-              value={pageSize}
-              onChange={(event) => setPageSize(Number.parseInt(event.target.value, 10))}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            <Label htmlFor="admin-page-size" className="text-xs uppercase text-muted-foreground">
+              Rows
+            </Label>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => setPageSize(Number.parseInt(value, 10))}
             >
-              {PAGE_SIZE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="admin-page-size" className="h-9 min-w-[100px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Rows</SelectLabel>
+                  {PAGE_SIZE_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <Button onClick={handleCreateClick}>
@@ -746,6 +762,75 @@ const CourseForm = ({ initialValues, onSubmit, onCancel, isSubmitting }: CourseF
         </Button>
       </DialogFooter>
     </form>
+  );
+};
+
+const INTEGRATION_LINK_TEMPLATE =
+  'https://icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID&studentName=PLACEHOLDER_NAME&token=PLACEHOLDER_TOKEN';
+
+export const AdminIntegrationPage = () => {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<number>();
+
+  useEffect(() => () => {
+    if (resetTimerRef.current) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(INTEGRATION_LINK_TEMPLATE);
+      setCopied(true);
+      toast({
+        title: 'Link copied',
+        description: 'The integration link template has been copied to your clipboard.'
+      });
+      resetTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy integration link template', error);
+      toast({
+        title: 'Copy failed',
+        description: 'Select the link manually and copy it if clipboard access is blocked.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Integration</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use this link template when configuring Circle or other systems to open ICEBox with the
+          required query parameters.
+        </p>
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Launch link template</CardTitle>
+          <CardDescription>
+            Use this link in Circle to allow students to upload their work. Do not replace any values.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Input
+            value={INTEGRATION_LINK_TEMPLATE}
+            readOnly
+            onFocus={(event) => event.currentTarget.select()}
+            className="font-mono text-xs sm:text-sm"
+            aria-label="ICEBox integration link template"
+          />
+          <div className="flex justify-end">
+            <Button type="button" onClick={handleCopy} className="gap-2">
+              <Copy className="h-4 w-4" aria-hidden="true" />
+              {copied ? 'Copied!' : 'Copy link'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

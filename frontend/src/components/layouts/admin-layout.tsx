@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { ClipboardList, Notebook, Users } from 'lucide-react';
+import { ClipboardList, Link2, Notebook, Users } from 'lucide-react';
 
 import { ModeToggle } from '@/components/mode-toggle';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,12 @@ import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/providers/admin-auth-provider';
 
 const navItems = [
+  {
+    to: 'integration',
+    icon: Link2,
+    label: 'Integration',
+    description: 'Launch link template for Circle'
+  },
   {
     to: 'submissions',
     icon: ClipboardList,

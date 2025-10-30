@@ -2,7 +2,12 @@ import { createBrowserRouter, createRoutesFromElements, Navigate, Route } from '
 
 import { AdminLayout } from '@/components/layouts/admin-layout';
 import { AppLayout } from '@/components/layouts/app-layout';
-import { AdminAssignmentsPage, AdminGate, AdminUsersPage } from '@/routes/admin';
+import {
+  AdminAssignmentsPage,
+  AdminGate,
+  AdminIntegrationPage,
+  AdminUsersPage
+} from '@/routes/admin';
 import { AdminSubmissionsPage } from '@/routes/admin/submissions';
 import { UploadPage } from '@/routes/upload-page';
 
@@ -14,7 +19,8 @@ export const router = createBrowserRouter(
       </Route>
       <Route path="/admin" element={<AdminGate />}>
         <Route element={<AdminLayout />}>
-          <Route index element={<Navigate to="submissions" replace />} />
+          <Route index element={<Navigate to="integration" replace />} />
+          <Route path="integration" element={<AdminIntegrationPage />} />
           <Route path="submissions" element={<AdminSubmissionsPage />} />
           <Route path="assignments" element={<AdminAssignmentsPage />} />
           <Route path="users" element={<AdminUsersPage />} />
