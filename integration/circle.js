@@ -44,17 +44,29 @@
 
   const getEmail = () => {
     try {
+      // Try Pendo visitor ID first
       const k = Object.keys(localStorage).find(k => k.startsWith('_pendo_visitorId'));
-      if (!k) return null;
-      return JSON.parse(localStorage.getItem(k) || '{}')?.value || null;
+      if (k) {
+        const email = JSON.parse(localStorage.getItem(k) || '{}')?.value || null;
+        if (email) return email;
+      }
+
+      // Fallback to V1-PunditUserContext
+      const ctx = JSON.parse(localStorage.getItem('V1-PunditUserContext') || 'null');
+      return ctx?.current_user?.email || null;
     } catch { return null; }
   };
 
   const getClassSlug = () => {
     try {
+      // Try sessionStorage first
       const arr = JSON.parse(sessionStorage.getItem('previous_page_loads') || '[]');
       const url = arr.at(-1)?.url;
-      return url?.match(/\/c\/([^/]+)/)?.[1] || null;
+      const fromSession = url?.match(/\/c\/([^/]+)/)?.[1];
+      if (fromSession) return fromSession;
+
+      // Fallback to current URL pathname
+      return window.location.pathname.match(/\/c\/([^/]+)/)?.[1] || null;
     } catch { return null; }
   };
 
@@ -71,7 +83,7 @@
     const studentName = ctx?.current_user?.name || null;
 
     if (!email || !cls) {
-      console.log('[Icebox Link Updater] Waiting: email or class not ready.');
+      console.log('[Icebox Link Updater] Waiting: email or class not ready (V2).');
       return false;
     }
 
