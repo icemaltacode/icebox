@@ -17,7 +17,7 @@
   const API_BASE_URL = 'https://uav5qzlbbk.execute-api.eu-south-1.amazonaws.com';
   const SEL =
     'a[href*="studentEmail=PLACEHOLDER_EMAIL"][href*="class=PLACEHOLDER_CLASS"][href*="studentId=PLACEHOLDER_ID"][href*="studentName=PLACEHOLDER_NAME"][href*="token=PLACEHOLDER_TOKEN"]';
-  let done = false, observer, tid;
+  let observer;
 
   const requestShortToken = async () => {
     try {
@@ -64,8 +64,6 @@
   };
 
   const update = () => {
-    if (done) return true;
-
     const email = getEmail();
     const cls = getClassSlug();
     const ctx = getUserContext();
@@ -79,11 +77,16 @@
 
     const links = document.querySelectorAll(SEL);
     if (!links.length) {
-      console.log('[Icebox Link Updater] Waiting: placeholder links not in DOM yet.');
-      return false;
+      return false; // No links to update, but don't log spam
     }
 
+    let updatedCount = 0;
     links.forEach(a => {
+      // Skip if already processed
+      if (a.dataset.iceboxHandled === 'true') {
+        return;
+      }
+
       try {
         const u = new URL(a.href, location.href);
         u.searchParams.set('studentEmail', email);
@@ -92,54 +95,62 @@
         if (studentName) u.searchParams.set('studentName', studentName);
         u.searchParams.delete('token');
         a.href = u.toString();
-        if (!a.dataset.iceboxHandled) {
-          const ensureReferrer = () => {
-            a.removeAttribute('rel');
-            a.removeAttribute('referrerpolicy');
-          };
 
+        const ensureReferrer = () => {
+          a.removeAttribute('rel');
+          a.removeAttribute('referrerpolicy');
+        };
+
+        ensureReferrer();
+        a.addEventListener('mouseenter', ensureReferrer);
+        a.addEventListener('focus', ensureReferrer);
+        a.addEventListener('touchstart', ensureReferrer, { passive: true });
+        a.addEventListener('click', async (event) => {
           ensureReferrer();
-          a.addEventListener('mouseenter', ensureReferrer);
-          a.addEventListener('focus', ensureReferrer);
-          a.addEventListener('touchstart', ensureReferrer, { passive: true });
-          a.addEventListener('click', async (event) => {
-            ensureReferrer();
-            event.preventDefault();
-            try {
-              const shortToken = await requestShortToken();
-              if (!shortToken) {
-                alert('We could not prepare the ICEBox upload link. Please try again.');
-                return;
-              }
-
-              const nav = new URL(a.href, location.href);
-              nav.searchParams.set('token', shortToken);
-              window.open(nav.toString(), '_blank', 'noopener');
-            } catch (err) {
-              console.error('[Icebox Link Updater] Failed to request short token', err);
+          event.preventDefault();
+          try {
+            const shortToken = await requestShortToken();
+            if (!shortToken) {
               alert('We could not prepare the ICEBox upload link. Please try again.');
+              return;
             }
-          });
-          a.dataset.iceboxHandled = 'true';
-        }
+
+            const nav = new URL(a.href, location.href);
+            nav.searchParams.set('token', shortToken);
+            window.open(nav.toString(), '_blank', 'noopener');
+          } catch (err) {
+            console.error('[Icebox Link Updater] Failed to request short token', err);
+            alert('We could not prepare the ICEBox upload link. Please try again.');
+          }
+        });
+
+        a.dataset.iceboxHandled = 'true';
+        updatedCount++;
         console.log('[Icebox Link Updater] Updated link →', a.href);
       } catch (e) {
         console.warn('[Icebox Link Updater] Failed updating a link:', e);
       }
     });
 
-    console.log(`[Icebox Link Updater] ✅ Finished — ${links.length} link(s) updated.`);
-    done = true;
-    observer && observer.disconnect();
-    tid && clearInterval(tid);
-    return true;
+    if (updatedCount > 0) {
+      console.log(`[Icebox Link Updater] ✅ Processed ${updatedCount} new link(s).`);
+    }
+
+    return updatedCount > 0;
   };
 
-  console.log('[Icebox Link Updater] Initialising…');
+  console.log('[Icebox Link Updater] Initialising… Will monitor for new links continuously.');
+
+  // Run initial update
   update();
-  tid = setInterval(() => { if (update()) clearInterval(tid); }, 500);
-  setTimeout(() => clearInterval(tid), 10000);
+
+  // Keep checking periodically for new links (every 2 seconds)
+  setInterval(update, 2000);
+
+  // Watch for DOM changes (SPA navigation, dynamic content)
   observer = new MutationObserver(() => update());
   observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  // Also run on full page load
   window.addEventListener('load', update);
 })();
