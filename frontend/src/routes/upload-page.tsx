@@ -684,8 +684,8 @@ export const UploadPage = () => {
 
       if (!trimmedEducatorEmail) {
         toast({
-          title: 'Educator email required',
-          description: 'Provide the educator’s email so we know who should receive the files.',
+          title: 'Grader email required',
+          description: 'Provide the grader’s email so we know who should receive the files.',
           variant: 'destructive'
         });
         return;
@@ -856,8 +856,8 @@ export const UploadPage = () => {
           Upload your assignment
         </h1>
         <p className="text-base text-muted-foreground sm:text-lg">
-          Drag in multiple files or an entire folder. Add any notes for your educator before you send.
-          Educators are notified automatically.
+          Drag in multiple files or an entire folder. Add any notes for your grader before you send.
+          Graders are notified automatically.
         </p>
       </section>
 
@@ -1007,7 +1007,7 @@ export const UploadPage = () => {
           <CardHeader>
             <CardTitle className="text-xl">Submission details</CardTitle>
             <CardDescription>
-              We’ll fill in your details automatically when you launch from Circle. Only educator notes
+              We’ll fill in your details automatically when you launch from Circle. Only grader notes
               are needed if everything looks correct.
             </CardDescription>
           </CardHeader>
@@ -1036,7 +1036,7 @@ export const UploadPage = () => {
                     <p className="mt-2 text-lg font-semibold">{form.courseId || 'Not provided'}</p>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {selectedCourse
-                        ? `Files are routed to ${selectedCourse.educatorName ?? 'the assigned educator'} automatically.`
+                        ? `Files are routed to your grader automatically.`
                         : 'We couldn’t match this course in our records. Please confirm the details below.'}
                     </p>
                   </div>
@@ -1134,7 +1134,7 @@ export const UploadPage = () => {
                 {selectedCourse?.courseName && (
                   <p className="text-xs text-muted-foreground">
                     {selectedCourse.courseName}
-                    {selectedCourse.educatorName ? ` · Educator: ${selectedCourse.educatorName}` : ''}
+                    {selectedCourse.educatorName ? ` · Grader: ${selectedCourse.educatorName}` : ''}
                   </p>
                 )}
 
@@ -1146,7 +1146,7 @@ export const UploadPage = () => {
 
                 {coursesError && (
                   <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    We couldn&rsquo;t load the course list. Enter the course code and educator email manually.
+                    We couldn&rsquo;t load the course list. Enter the course code and grader email manually.
                   </div>
                 )}
 
@@ -1171,7 +1171,7 @@ export const UploadPage = () => {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="educatorEmail">
-                        Educator email <span className="text-destructive" aria-hidden="true">*</span>
+                        Grader email <span className="text-destructive" aria-hidden="true">*</span>
                       </Label>
                       <Input
                         id="educatorEmail"
@@ -1180,7 +1180,7 @@ export const UploadPage = () => {
                         onChange={(event) =>
                           setForm((prev) => ({ ...prev, educatorEmail: event.target.value }))
                         }
-                        placeholder="educator@example.com"
+                        placeholder="grader@example.com"
                         disabled={isUploading}
                         required
                         aria-required="true"
@@ -1209,7 +1209,7 @@ export const UploadPage = () => {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="comment">Notes for your educator</Label>
+              <Label htmlFor="comment">Notes for your grader</Label>
               <Textarea
                 id="comment"
                 value={form.comment}
