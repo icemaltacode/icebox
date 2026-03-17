@@ -41,31 +41,39 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return { statusCode: 404, body: JSON.stringify({ message: 'File not found for token' }) };
   }
 
-  const expiresAt = matchedFile.expiresAt as string | undefined;
-  if (!expiresAt || Date.parse(expiresAt) < Date.now()) {
-    return {
-      statusCode: 410,
-      body: JSON.stringify({ message: 'Download link has expired' })
-    };
-  }
-
   const objectKey = matchedFile.objectKey as string;
+  const expiresAt = matchedFile.expiresAt as string | undefined;
+  const tokenExpired = !expiresAt || Date.parse(expiresAt) < Date.now();
 
-  // Check if the object is in Glacier and not yet restored
+  // Check storage class before rejecting expired tokens — small files that S3
+  // cannot transition to Glacier (< 128 KB) remain in STANDARD and are still
+  // downloadable even after the token's nominal expiry window.
   try {
     const storageInfo = await getStorageInfo(objectKey);
     if (isGlacier(storageInfo.storageClass) && storageInfo.restoreStatus !== 'COMPLETED') {
       return {
-        statusCode: 409,
+        statusCode: tokenExpired ? 410 : 409,
         body: JSON.stringify({
-          message: 'This file has been archived to Glacier and is not currently available for download.',
+          message: tokenExpired
+            ? 'Download link has expired and the file has been archived.'
+            : 'This file has been archived to Glacier and is not currently available for download.',
           storageClass: storageInfo.storageClass,
           restoreStatus: storageInfo.restoreStatus
         })
       };
     }
   } catch (error) {
-    console.error('Failed to check storage class, attempting download anyway', { error, objectKey });
+    console.error('Failed to check storage class', { error, objectKey });
+    if (tokenExpired) {
+      return {
+        statusCode: 410,
+        body: JSON.stringify({ message: 'Download link has expired' })
+      };
+    }
+  }
+
+  if (tokenExpired) {
+    console.info('Allowing expired token for STANDARD-class file', { submissionId, objectKey });
   }
 
   const s3 = getS3Client();

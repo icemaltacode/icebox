@@ -5,7 +5,13 @@ import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { getDynamoDbDocumentClient, getSesClient } from '../lib/aws';
 import { ASSIGNMENTS_TABLE, COURSES_TABLE, SES_SOURCE_EMAIL, ADMIN_PORTAL_URL } from '../lib/env';
 import { getStorageInfo } from '../lib/glacier';
-import { buildRestoreCompleteEmail } from '../lib/emailTemplates';
+import { buildRestoreBatchCompleteEmail } from '../lib/emailTemplates';
+
+type CompletedRestore = {
+  courseDisplayName: string;
+  studentName: string | null;
+  restoreExpiresAtIso: string;
+};
 
 export const handler: ScheduledHandler = async () => {
   const dynamodb = getDynamoDbDocumentClient();
@@ -54,6 +60,10 @@ export const handler: ScheduledHandler = async () => {
 
   console.log(`Checking restore status for ${pendingSubmissions.length} submission(s)`);
 
+  // Collect completed restores grouped by the admin who requested them
+  const completedByAdmin = new Map<string, CompletedRestore[]>();
+  const courseNameCache = new Map<string, string>();
+
   for (const pending of pendingSubmissions) {
     try {
       const storageInfo = await getStorageInfo(pending.objectKey);
@@ -63,6 +73,7 @@ export const handler: ScheduledHandler = async () => {
       }
 
       const now = new Date().toISOString();
+      const restoreExpiresAtIso = storageInfo.restoreExpiresAt ?? now;
 
       await dynamodb.send(
         new UpdateCommand({
@@ -76,61 +87,75 @@ export const handler: ScheduledHandler = async () => {
           },
           ExpressionAttributeValues: {
             ':now': now,
-            ':expiresAt': storageInfo.restoreExpiresAt ?? now
+            ':expiresAt': restoreExpiresAtIso
           }
         })
       );
 
       console.log(`Restore completed for submission ${pending.submissionId}`);
 
-      // Send email notification to the admin who requested the restore
-      if (pending.restoreRequestedBy && SES_SOURCE_EMAIL) {
+      if (pending.restoreRequestedBy) {
         let courseDisplayName = pending.courseId;
-        try {
-          const courseData = await dynamodb.send(
-            new GetCommand({
-              TableName: COURSES_TABLE,
-              Key: { courseCode: pending.courseId }
-            })
-          );
-          if (courseData.Item?.courseName) {
-            courseDisplayName = `${courseData.Item.courseName} (${pending.courseId})`;
+        if (courseNameCache.has(pending.courseId)) {
+          courseDisplayName = courseNameCache.get(pending.courseId)!;
+        } else {
+          try {
+            const courseData = await dynamodb.send(
+              new GetCommand({
+                TableName: COURSES_TABLE,
+                Key: { courseCode: pending.courseId }
+              })
+            );
+            if (courseData.Item?.courseName) {
+              courseDisplayName = `${courseData.Item.courseName} (${pending.courseId})`;
+            }
+          } catch (error) {
+            console.error('Failed to fetch course details for restore notification', { error });
           }
-        } catch (error) {
-          console.error('Failed to fetch course details for restore notification', { error });
+          courseNameCache.set(pending.courseId, courseDisplayName);
         }
 
-        try {
-          const ses = getSesClient();
-          const emailContent = buildRestoreCompleteEmail({
-            courseDisplayName,
-            studentName: pending.studentName ?? undefined,
-            submissionId: pending.submissionId,
-            restoreExpiresAtIso: storageInfo.restoreExpiresAt ?? now,
-            portalUrl: ADMIN_PORTAL_URL
-          });
-
-          await ses.send(
-            new SendEmailCommand({
-              Source: SES_SOURCE_EMAIL,
-              Destination: { ToAddresses: [pending.restoreRequestedBy] },
-              Message: {
-                Subject: { Data: emailContent.subject },
-                Body: {
-                  Html: {
-                    Charset: 'UTF-8',
-                    Data: emailContent.html
-                  }
-                }
-              }
-            })
-          );
-        } catch (error) {
-          console.error('Failed to send restore completion email', { error, submissionId: pending.submissionId });
-        }
+        const items = completedByAdmin.get(pending.restoreRequestedBy) ?? [];
+        items.push({
+          courseDisplayName,
+          studentName: pending.studentName,
+          restoreExpiresAtIso
+        });
+        completedByAdmin.set(pending.restoreRequestedBy, items);
       }
     } catch (error) {
       console.error('Failed to check restore status for submission', { error, submissionId: pending.submissionId });
+    }
+  }
+
+  // Send one batched email per admin
+  if (SES_SOURCE_EMAIL) {
+    const ses = getSesClient();
+    for (const [adminEmail, items] of completedByAdmin) {
+      try {
+        const emailContent = buildRestoreBatchCompleteEmail({
+          items,
+          portalUrl: ADMIN_PORTAL_URL
+        });
+
+        await ses.send(
+          new SendEmailCommand({
+            Source: SES_SOURCE_EMAIL,
+            Destination: { ToAddresses: [adminEmail] },
+            Message: {
+              Subject: { Data: emailContent.subject },
+              Body: {
+                Html: {
+                  Charset: 'UTF-8',
+                  Data: emailContent.html
+                }
+              }
+            }
+          })
+        );
+      } catch (error) {
+        console.error('Failed to send restore completion email', { error, adminEmail });
+      }
     }
   }
 };

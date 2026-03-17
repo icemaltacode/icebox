@@ -336,9 +336,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         if (storageInfo.restoreExpiresAt) {
           item.restoreExpiresAt = storageInfo.restoreExpiresAt;
         }
+        if (!isGlacier(storageInfo.storageClass)) {
+          item.archiveTransitionAt = null;
+          item.deletionAt = null;
+        }
       } catch (error) {
         console.warn('Failed to get storage info for submission', { submissionId: item.submissionId, error });
-        item.storageClass = isGlacier('GLACIER') ? 'GLACIER' : null;
+        // Cannot determine actual class — assume archived since the transition date has passed
+        item.storageClass = 'GLACIER';
       }
     })
   );

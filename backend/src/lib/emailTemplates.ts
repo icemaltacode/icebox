@@ -419,21 +419,40 @@ export const buildStudentEmail = (options: StudentEmailOptions) => {
   };
 };
 
-type RestoreCompleteEmailOptions = {
+type RestoreBatchItem = {
   courseDisplayName: string;
-  studentName?: string;
-  submissionId: string;
+  studentName: string | null;
   restoreExpiresAtIso: string;
+};
+
+type RestoreBatchCompleteEmailOptions = {
+  items: RestoreBatchItem[];
   portalUrl: string;
 };
 
-export const buildRestoreCompleteEmail = (options: RestoreCompleteEmailOptions) => {
-  const { courseDisplayName, studentName, submissionId, restoreExpiresAtIso, portalUrl } = options;
-  const formattedExpiry = formatTimestamp(restoreExpiresAtIso);
-  const studentReference = studentName ? escapeHtml(studentName) : 'a student';
+export const buildRestoreBatchCompleteEmail = (options: RestoreBatchCompleteEmailOptions) => {
+  const { items, portalUrl } = options;
+  const count = items.length;
+  const subject = count === 1
+    ? `Glacier restore complete — ${escapeHtml(items[0].courseDisplayName)}`
+    : `Glacier restore complete — ${count} submissions`;
+
+  const itemsHtml = items
+    .map((item) => {
+      const student = item.studentName ? escapeHtml(item.studentName) : 'Unknown student';
+      const expiry = formatTimestamp(item.restoreExpiresAtIso);
+      return `
+        <tr>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #2F3035; color: #FFFFFF; font-size: 14px;">${student}</td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #2F3035; color: #FFFFFF; font-size: 14px;">${escapeHtml(item.courseDisplayName)}</td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #2F3035; color: #CCCCCC; font-size: 13px;">${expiry}</td>
+        </tr>
+      `;
+    })
+    .join('');
 
   return {
-    subject: `Glacier restore complete — ${escapeHtml(courseDisplayName)}`,
+    subject,
     html: `
       <html>
         <body style="${baseEmailStyles}">
@@ -445,28 +464,39 @@ export const buildRestoreCompleteEmail = (options: RestoreCompleteEmailOptions) 
                   alt="ICEBox"
                   style="height:40px; width:auto; display:block; margin:0;"
                 />
-                <h1 style="margin: 12px 0 0; font-size: 24px;">File restored from archive</h1>
-                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
+                <h1 style="margin: 12px 0 0; font-size: 24px;">${count === 1 ? 'File restored from archive' : `${count} files restored from archive`}</h1>
               </div>
               <div style="${sectionStyles}">
                 <p style="margin: 0 0 16px; color: #FFFFFF; font-size: 16px; line-height: 1.6;">
-                  The archived submission by ${studentReference} has been restored from Glacier and is now available for download.
+                  ${count === 1
+                    ? `The archived submission by ${items[0].studentName ? escapeHtml(items[0].studentName) : 'a student'} has been restored from Glacier and is now available for download.`
+                    : `${count} archived submissions have been restored from Glacier and are now available for download.`}
                 </p>
-                <div style="margin-bottom: 20px;">
-                  <p style="${detailLabelStyles}">Available until</p>
-                  <p style="${detailValueStyles}">${formattedExpiry}</p>
-                  <p style="margin: 6px 0 0; color: #CCCCCC; font-size: 13px;">
-                    After this date, the file will return to Glacier and a new restore will be required.
-                  </p>
+                <table style="width: 100%; border-collapse: collapse;">
+                  <thead>
+                    <tr>
+                      <th style="padding: 8px 12px; text-align: left; ${detailLabelStyles} border-bottom: 1px solid #2F3035;">Student</th>
+                      <th style="padding: 8px 12px; text-align: left; ${detailLabelStyles} border-bottom: 1px solid #2F3035;">Course</th>
+                      <th style="padding: 8px 12px; text-align: left; ${detailLabelStyles} border-bottom: 1px solid #2F3035;">Available until</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${itemsHtml}
+                  </tbody>
+                </table>
+                <p style="margin: 16px 0 0; color: #CCCCCC; font-size: 13px;">
+                  After the listed dates, files will return to Glacier and a new restore will be required.
+                </p>
+                <div style="margin-top: 20px;">
+                  <a
+                    href="${escapeHtml(portalUrl)}/submissions"
+                    style="${buttonLinkStyles}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open submissions
+                  </a>
                 </div>
-                <a
-                  href="${escapeHtml(portalUrl)}/submissions"
-                  style="${buttonLinkStyles}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open submissions
-                </a>
               </div>
               <div style="${footerStyles}">
                 <p style="margin: 0;">Delivered by ICEBox — secure student submissions for ICE Campus.</p>

@@ -126,10 +126,13 @@ const formatRelative = (iso: string | null): string => {
   return `${positive} day${positive === 1 ? '' : 's'} ago`;
 };
 
-const formatTimeline = (iso: string | null): string => {
+const formatTimeline = (iso: string | null): { text: string; title: string } => {
   const absolute = formatDate(iso);
   const relative = formatRelative(iso);
-  return relative ? `${absolute} (${relative})` : absolute;
+  return {
+    text: relative || absolute,
+    title: absolute
+  };
 };
 
 const resolveStatusMeta = (submission: AdminSubmission) => {
@@ -730,26 +733,27 @@ export const AdminSubmissionsPage = () => {
                       <div className="flex flex-col gap-3">
                         {timelineItems.map((item) => {
                           const Icon = item.icon;
+                          const timeline = formatTimeline(item.value);
                           return (
                             <div
                               key={item.label}
                               className="flex items-start gap-2"
-                              title={item.label}
+                              title={`${item.label}: ${timeline.title}`}
                             >
                               <Icon className="mt-0.5 h-3 w-3" aria-hidden="true" />
                               <span className="sr-only">{item.label}</span>
-                              <span className="text-xs text-muted-foreground">{formatTimeline(item.value)}</span>
+                              <span className="text-xs text-muted-foreground">{timeline.text}</span>
                             </div>
                           );
                         })}
                         {submission.reminderCount > 0 && (
-                          <div className="flex items-start gap-2" title="Reminders sent">
+                          <div className="flex items-start gap-2" title={`Reminders sent${submission.lastReminderAt ? `: last ${formatTimeline(submission.lastReminderAt).title}` : ''}`}>
                             <BellRing className="mt-0.5 h-3 w-3" aria-hidden="true" />
                             <span className="sr-only">Reminders sent</span>
                             <span className="text-xs text-muted-foreground">
                               {submission.reminderCount}
                               {submission.lastReminderAt
-                                ? ` (last ${formatTimeline(submission.lastReminderAt)})`
+                                ? ` (last ${formatTimeline(submission.lastReminderAt).text})`
                                 : ''}
                             </span>
                           </div>
@@ -852,9 +856,9 @@ export const AdminSubmissionsPage = () => {
                         <span className="sr-only">{statusMeta.label}</span>
                       </span>
                     </CardTitle>
-                    <CardDescription className="flex items-center gap-2 text-xs" title="Uploaded">
+                    <CardDescription className="flex items-center gap-2 text-xs" title={`Uploaded: ${formatTimeline(submission.createdAt).title}`}>
                       <Upload className="h-3 w-3" aria-hidden="true" />
-                      <span>{formatTimeline(submission.createdAt)}</span>
+                      <span>{formatTimeline(submission.createdAt).text}</span>
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 text-sm">
@@ -949,22 +953,23 @@ export const AdminSubmissionsPage = () => {
                     <div className="flex flex-col gap-3 text-xs text-muted-foreground">
                       {timelineItems.map((item) => {
                         const Icon = item.icon;
+                        const timeline = formatTimeline(item.value);
                         return (
-                          <div key={item.label} className="flex items-start gap-2" title={item.label}>
+                          <div key={item.label} className="flex items-start gap-2" title={`${item.label}: ${timeline.title}`}>
                             <Icon className="mt-0.5 h-3 w-3" aria-hidden="true" />
                             <span className="sr-only">{item.label}</span>
-                            <span>{formatTimeline(item.value)}</span>
+                            <span>{timeline.text}</span>
                           </div>
                         );
                       })}
                       {submission.reminderCount > 0 && (
-                        <div className="flex items-start gap-2" title="Reminders sent">
+                        <div className="flex items-start gap-2" title={`Reminders sent${submission.lastReminderAt ? `: last ${formatTimeline(submission.lastReminderAt).title}` : ''}`}>
                           <BellRing className="mt-0.5 h-3 w-3" aria-hidden="true" />
                           <span className="sr-only">Reminders sent</span>
                           <span>
                             {submission.reminderCount}
                             {submission.lastReminderAt
-                              ? ` (last ${formatTimeline(submission.lastReminderAt)})`
+                              ? ` (last ${formatTimeline(submission.lastReminderAt).text})`
                               : ''}
                           </span>
                         </div>
