@@ -7,6 +7,7 @@ import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { getDynamoDbDocumentClient, getS3Client, getSesClient } from '../lib/aws';
 import { ASSIGNMENTS_BUCKET, ASSIGNMENTS_TABLE, COURSES_TABLE, SES_SOURCE_EMAIL } from '../lib/env';
 import { buildWorkViewedEmail } from '../lib/emailTemplates';
+import { getStorageInfo, isGlacier } from '../lib/glacier';
 
 const DOWNLOAD_LINK_TTL_SECONDS = 900;
 
@@ -49,6 +50,24 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
 
   const objectKey = matchedFile.objectKey as string;
+
+  // Check if the object is in Glacier and not yet restored
+  try {
+    const storageInfo = await getStorageInfo(objectKey);
+    if (isGlacier(storageInfo.storageClass) && storageInfo.restoreStatus !== 'COMPLETED') {
+      return {
+        statusCode: 409,
+        body: JSON.stringify({
+          message: 'This file has been archived to Glacier and is not currently available for download.',
+          storageClass: storageInfo.storageClass,
+          restoreStatus: storageInfo.restoreStatus
+        })
+      };
+    }
+  } catch (error) {
+    console.error('Failed to check storage class, attempting download anyway', { error, objectKey });
+  }
+
   const s3 = getS3Client();
   const command = new GetObjectCommand({
     Bucket: ASSIGNMENTS_BUCKET,

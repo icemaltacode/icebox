@@ -105,6 +105,9 @@ export type AdminSubmission = {
   archiveTransitionAt: string | null;
   deletionAt: string | null;
   downloadBaseUrl: string | null;
+  storageClass: string | null;
+  restoreStatus: string | null;
+  restoreExpiresAt: string | null;
 };
 
 export type ListSubmissionsRequest = {
@@ -235,4 +238,8 @@ export const remindSubmission = async (token: string, submissionId: string): Pro
 
 export const deleteSubmission = async (token: string, submissionId: string): Promise<void> => {
   await api.delete(`/admin/submissions/${encodeURIComponent(submissionId)}`, withAuthHeader(token));
+};
+
+export const restoreSubmission = async (token: string, submissionId: string): Promise<void> => {
+  await api.post(`/admin/submissions/${encodeURIComponent(submissionId)}/restore`, undefined, withAuthHeader(token));
 };

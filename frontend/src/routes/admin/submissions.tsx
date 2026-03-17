@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  ArchiveRestore,
   ArrowUpDown,
   BellRing,
   CalendarClock,
   Clock3,
+  Download,
   FileText,
   Loader2,
   RefreshCw,
+  Snowflake,
   Trash2,
   Upload
 } from 'lucide-react';
@@ -156,6 +159,25 @@ const resolveStatusMeta = (submission: AdminSubmission) => {
   };
 };
 
+type GlacierState = 'available' | 'archived' | 'restoring' | 'restored';
+
+const getGlacierState = (submission: AdminSubmission): GlacierState => {
+  if (!submission.storageClass || submission.storageClass === 'STANDARD') {
+    return 'available';
+  }
+  if (submission.restoreStatus === 'COMPLETED') {
+    // Check if the restored copy has expired
+    if (submission.restoreExpiresAt && Date.parse(submission.restoreExpiresAt) < Date.now()) {
+      return 'archived';
+    }
+    return 'restored';
+  }
+  if (submission.restoreStatus === 'IN_PROGRESS') {
+    return 'restoring';
+  }
+  return 'archived';
+};
+
 const useDebouncedValue = (value: string, delay = 300) => {
   const [debounced, setDebounced] = useState(value);
 
@@ -213,7 +235,11 @@ export const AdminSubmissionsPage = () => {
   } = useQuery<ListSubmissionsResponse>({
     queryKey,
     queryFn: () => adminApi.listSubmissions(listParams),
-    placeholderData: (previousData) => previousData
+    placeholderData: (previousData) => previousData,
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      return items.some((s) => s.restoreStatus === 'IN_PROGRESS') ? 60_000 : false;
+    }
   });
 
   const coursesQuery = useQuery<ListCoursesResponse>({
@@ -264,6 +290,24 @@ export const AdminSubmissionsPage = () => {
     }
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: (submissionId: string) => adminApi.restoreSubmission(submissionId),
+    onSuccess: () => {
+      toast({
+        title: 'Restore requested',
+        description: 'The file will be available for download in 3\u20135 hours. You will receive an email when it is ready.'
+      });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'submissions'] });
+    },
+    onError: (err) => {
+      toast({
+        title: 'Failed to request restore',
+        description: err instanceof Error ? err.message : 'Could not initiate Glacier restore.',
+        variant: 'destructive'
+      });
+    }
+  });
+
   const rawSubmissions: AdminSubmission[] = data?.items ?? [];
   const filteredSubmissions = rawSubmissions.filter((submission) => {
     if (statusFilter === 'accessed' && !submission.lastAccessedAt) {
@@ -308,7 +352,7 @@ export const AdminSubmissionsPage = () => {
       pageSize !== PAGE_SIZE_OPTIONS[0]
   );
 
-  const isMutating = remindMutation.isPending || deleteMutation.isPending;
+  const isMutating = remindMutation.isPending || deleteMutation.isPending || restoreMutation.isPending;
 
   const selectedCourse = coursesQuery.data?.items.find((course) => course.courseCode === courseFilter);
 
@@ -540,6 +584,7 @@ export const AdminSubmissionsPage = () => {
                 const deletePending =
                   deleteMutation.isPending &&
                   submissionToDelete?.submissionId === submission.submissionId;
+                const glacierState = getGlacierState(submission);
                 const timelineItems = [
                   { label: 'Uploaded', value: submission.createdAt, icon: Upload },
                   {
@@ -556,13 +601,23 @@ export const AdminSubmissionsPage = () => {
                     label: 'Lifecycle delete',
                     value: submission.deletionAt,
                     icon: Trash2
-                  }
+                  },
+                  ...(glacierState === 'restoring'
+                    ? [{ label: 'Restore in progress', value: new Date().toISOString(), icon: ArchiveRestore }]
+                    : []),
+                  ...(glacierState === 'restored' && submission.restoreExpiresAt
+                    ? [{ label: 'Restored until', value: submission.restoreExpiresAt, icon: ArchiveRestore }]
+                    : [])
                 ];
 
                 return (
                   <tr
                     key={submission.submissionId}
-                    className="align-top transition-colors hover:bg-muted/40"
+                    className={cn(
+                      'align-top transition-colors hover:bg-muted/40',
+                      glacierState === 'archived' && 'bg-sky-50/50 dark:bg-sky-950/20',
+                      glacierState === 'restoring' && 'bg-sky-50/30 dark:bg-sky-950/10'
+                    )}
                   >
                     <td className="px-4 py-4">
                       <div className="font-medium text-foreground">{submission.courseId}</div>
@@ -600,19 +655,76 @@ export const AdminSubmissionsPage = () => {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <div className="font-medium text-foreground">
-                        <a
-                          href={submission.files[0]?.downloadToken && submission.downloadBaseUrl
-                            ? `${submission.downloadBaseUrl}/downloads/${submission.submissionId}/${submission.files[0].downloadToken}`
-                            : '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary underline-offset-2 hover:underline"
-                        >
-                          Download
-                        </a>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{formatBytes(submission.totalSize)}</div>
+                      {(() => {
+                        const glacierState = getGlacierState(submission);
+                        const downloadUrl = submission.files[0]?.downloadToken && submission.downloadBaseUrl
+                          ? `${submission.downloadBaseUrl}/downloads/${submission.submissionId}/${submission.files[0].downloadToken}`
+                          : null;
+
+                        switch (glacierState) {
+                          case 'archived':
+                            return (
+                              <div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={restoreMutation.isPending || isMutating}
+                                  onClick={() => restoreMutation.mutate(submission.submissionId)}
+                                  className="gap-1.5 border-sky-500/40 text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/30"
+                                >
+                                  <Snowflake className="h-3.5 w-3.5" />
+                                  Request restore
+                                </Button>
+                                <div className="mt-1 flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400">
+                                  <Snowflake className="h-3 w-3" />
+                                  Archived in Glacier
+                                </div>
+                              </div>
+                            );
+                          case 'restoring':
+                            return (
+                              <div>
+                                <div className="flex items-center gap-1.5 font-medium text-sky-600 dark:text-sky-400">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Restoring…
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">Usually 3–5 hours</div>
+                              </div>
+                            );
+                          case 'restored':
+                            return (
+                              <div>
+                                <a
+                                  href={downloadUrl ?? '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  Download
+                                </a>
+                                <div className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                                  Available until {formatDate(submission.restoreExpiresAt)}
+                                </div>
+                              </div>
+                            );
+                          default:
+                            return (
+                              <div className="font-medium text-foreground">
+                                <a
+                                  href={downloadUrl ?? '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-primary underline-offset-2 hover:underline"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  Download
+                                </a>
+                              </div>
+                            );
+                        }
+                      })()}
+                      <div className="mt-1 text-xs text-muted-foreground">{formatBytes(submission.totalSize)}</div>
                     </td>
                     <td className="px-4 py-4 text-xs text-muted-foreground">
                       <div className="flex flex-col gap-3">
@@ -695,6 +807,7 @@ export const AdminSubmissionsPage = () => {
           ) : (
             submissions.map((submission) => {
               const statusMeta = resolveStatusMeta(submission);
+              const glacierState = getGlacierState(submission);
               const timelineItems = [
                 { label: 'Uploaded', value: submission.createdAt, icon: Upload },
                 {
@@ -711,11 +824,17 @@ export const AdminSubmissionsPage = () => {
                   label: 'Lifecycle delete',
                   value: submission.deletionAt,
                   icon: Trash2
-                }
+                },
+                ...(glacierState === 'restoring'
+                  ? [{ label: 'Restore in progress', value: new Date().toISOString(), icon: ArchiveRestore }]
+                  : []),
+                ...(glacierState === 'restored' && submission.restoreExpiresAt
+                  ? [{ label: 'Restored until', value: submission.restoreExpiresAt, icon: ArchiveRestore }]
+                  : [])
               ];
 
               return (
-                <Card key={submission.submissionId} className="border-border">
+                <Card key={submission.submissionId} className={cn('border-border', glacierState === 'archived' && 'border-sky-500/30 bg-sky-50/50 dark:bg-sky-950/20')}>
                   <CardHeader className="space-y-1">
                     <CardTitle className="flex items-center justify-between text-base">
                       <span>
@@ -754,18 +873,77 @@ export const AdminSubmissionsPage = () => {
                     </div>
                     <div>
                       <p className="text-xs font-semibold uppercase text-muted-foreground">Files</p>
-                      <p className="font-medium text-foreground">
-                        <a
-                          href={submission.files[0]?.downloadToken && submission.downloadBaseUrl
-                            ? `${submission.downloadBaseUrl}/downloads/${submission.submissionId}/${submission.files[0].downloadToken}`
-                            : '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary underline-offset-2 hover:underline"
-                        >
-                          Download
-                        </a>
-                      </p>
+                      {(() => {
+                        const glacierState = getGlacierState(submission);
+                        const downloadUrl = submission.files[0]?.downloadToken && submission.downloadBaseUrl
+                          ? `${submission.downloadBaseUrl}/downloads/${submission.submissionId}/${submission.files[0].downloadToken}`
+                          : null;
+
+                        switch (glacierState) {
+                          case 'archived':
+                            return (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={restoreMutation.isPending || isMutating}
+                                  onClick={() => restoreMutation.mutate(submission.submissionId)}
+                                  className="mt-1 gap-1.5 border-sky-500/40 text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/30"
+                                >
+                                  <Snowflake className="h-3.5 w-3.5" />
+                                  Request restore
+                                </Button>
+                                <p className="mt-1 flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400">
+                                  <Snowflake className="h-3 w-3" />
+                                  Archived in Glacier
+                                </p>
+                              </>
+                            );
+                          case 'restoring':
+                            return (
+                              <>
+                                <p className="mt-1 flex items-center gap-1.5 font-medium text-sky-600 dark:text-sky-400">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Restoring…
+                                </p>
+                                <p className="text-xs text-muted-foreground">Usually 3–5 hours</p>
+                              </>
+                            );
+                          case 'restored':
+                            return (
+                              <>
+                                <p className="font-medium text-foreground">
+                                  <a
+                                    href={downloadUrl ?? '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-primary underline-offset-2 hover:underline"
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download
+                                  </a>
+                                </p>
+                                <p className="text-xs text-amber-600 dark:text-amber-400">
+                                  Available until {formatDate(submission.restoreExpiresAt)}
+                                </p>
+                              </>
+                            );
+                          default:
+                            return (
+                              <p className="font-medium text-foreground">
+                                <a
+                                  href={downloadUrl ?? '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-primary underline-offset-2 hover:underline"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  Download
+                                </a>
+                              </p>
+                            );
+                        }
+                      })()}
                       <p className="text-xs text-muted-foreground">{formatBytes(submission.totalSize)}</p>
                     </div>
                     <div className="flex flex-col gap-3 text-xs text-muted-foreground">

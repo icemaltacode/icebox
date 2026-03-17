@@ -419,6 +419,66 @@ export const buildStudentEmail = (options: StudentEmailOptions) => {
   };
 };
 
+type RestoreCompleteEmailOptions = {
+  courseDisplayName: string;
+  studentName?: string;
+  submissionId: string;
+  restoreExpiresAtIso: string;
+  portalUrl: string;
+};
+
+export const buildRestoreCompleteEmail = (options: RestoreCompleteEmailOptions) => {
+  const { courseDisplayName, studentName, submissionId, restoreExpiresAtIso, portalUrl } = options;
+  const formattedExpiry = formatTimestamp(restoreExpiresAtIso);
+  const studentReference = studentName ? escapeHtml(studentName) : 'a student';
+
+  return {
+    subject: `Glacier restore complete — ${escapeHtml(courseDisplayName)}`,
+    html: `
+      <html>
+        <body style="${baseEmailStyles}">
+          <div style="padding: 24px;">
+            <div style="${containerStyles}">
+              <div style="${headerStyles}">
+                <img
+                  src="https://icebox.icecampus.com/icebox_logo.svg"
+                  alt="ICEBox"
+                  style="height:40px; width:auto; display:block; margin:0;"
+                />
+                <h1 style="margin: 12px 0 0; font-size: 24px;">File restored from archive</h1>
+                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
+              </div>
+              <div style="${sectionStyles}">
+                <p style="margin: 0 0 16px; color: #FFFFFF; font-size: 16px; line-height: 1.6;">
+                  The archived submission by ${studentReference} has been restored from Glacier and is now available for download.
+                </p>
+                <div style="margin-bottom: 20px;">
+                  <p style="${detailLabelStyles}">Available until</p>
+                  <p style="${detailValueStyles}">${formattedExpiry}</p>
+                  <p style="margin: 6px 0 0; color: #CCCCCC; font-size: 13px;">
+                    After this date, the file will return to Glacier and a new restore will be required.
+                  </p>
+                </div>
+                <a
+                  href="${escapeHtml(portalUrl)}/submissions"
+                  style="${buttonLinkStyles}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open submissions
+                </a>
+              </div>
+              <div style="${footerStyles}">
+                <p style="margin: 0;">Delivered by ICEBox — secure student submissions for ICE Campus.</p>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+  };
+};
+
 export const buildWorkViewedEmail = (options: WorkViewedEmailOptions) => {
   const { courseDisplayName, studentName, educatorName, accessedAtIso } = options;
   const formattedTimestamp = formatTimestamp(accessedAtIso);

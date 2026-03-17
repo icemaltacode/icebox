@@ -21,6 +21,7 @@ import {
   type InviteAdminUserPayload,
   remindSubmission,
   deleteSubmission,
+  restoreSubmission,
   updateAdminUser,
   updateCourse
 } from '@/lib/admin-api';
@@ -71,6 +72,8 @@ export const useAdminApi = () => {
     remindSubmission: (submissionId: string) =>
       withToken((token) => remindSubmission(token, submissionId)),
     deleteSubmission: (submissionId: string) =>
-      withToken((token) => deleteSubmission(token, submissionId))
+      withToken((token) => deleteSubmission(token, submissionId)),
+    restoreSubmission: (submissionId: string) =>
+      withToken((token) => restoreSubmission(token, submissionId))
   };
 };

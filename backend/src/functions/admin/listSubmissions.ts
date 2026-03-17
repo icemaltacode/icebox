@@ -12,6 +12,7 @@ import {
   SubmissionFileRecord
 } from '../../lib/submissions';
 import { ValidationError } from '../../lib/errors';
+import { getStorageInfo, isGlacier } from '../../lib/glacier';
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
@@ -57,6 +58,9 @@ type EnrichedSubmission = {
   archiveTransitionAt: string | null;
   deletionAt: string | null;
   downloadBaseUrl: string | null;
+  storageClass: string | null;
+  restoreStatus: string | null;
+  restoreExpiresAt: string | null;
 };
 
 const normalizeSortField = (value: string | undefined): SortField => {
@@ -198,7 +202,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
             totalSize,
             archiveTransitionAt,
             deletionAt,
-            downloadBaseUrl: record.downloadBaseUrl ?? null
+            downloadBaseUrl: record.downloadBaseUrl ?? null,
+            storageClass: null,
+            restoreStatus: null,
+            restoreExpiresAt: record.restoreExpiresAt ?? null
           });
         } catch (error) {
           if (error instanceof ValidationError) {
@@ -311,6 +318,30 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const safePage = Math.min(page, totalPages);
   const startIndex = (safePage - 1) * pageSize;
   const items = sorted.slice(startIndex, startIndex + pageSize);
+
+  // Enrich paginated items with storage class info (only for items that may be archived)
+  const now = Date.now();
+  await Promise.all(
+    items.map(async (item) => {
+      const transitionAt = item.archiveTransitionAt ? Date.parse(item.archiveTransitionAt) : Infinity;
+      if (transitionAt > now || !item.files.length) {
+        item.storageClass = 'STANDARD';
+        return;
+      }
+
+      try {
+        const storageInfo = await getStorageInfo(item.files[0].objectKey);
+        item.storageClass = storageInfo.storageClass;
+        item.restoreStatus = storageInfo.restoreStatus;
+        if (storageInfo.restoreExpiresAt) {
+          item.restoreExpiresAt = storageInfo.restoreExpiresAt;
+        }
+      } catch (error) {
+        console.warn('Failed to get storage info for submission', { submissionId: item.submissionId, error });
+        item.storageClass = isGlacier('GLACIER') ? 'GLACIER' : null;
+      }
+    })
+  );
 
   return {
     statusCode: 200,

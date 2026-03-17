@@ -46,7 +46,8 @@ const serverlessConfiguration = {
               's3:DeleteObject',
               's3:AbortMultipartUpload',
               's3:ListMultipartUploadParts',
-              's3:ListBucket'
+              's3:ListBucket',
+              's3:RestoreObject'
             ],
             Resource: [
               'arn:aws:s3:::${self:custom.resources.assignmentsBucketName}',
@@ -406,6 +407,17 @@ const serverlessConfiguration = {
         }
       ]
     },
+    adminRestoreSubmission: {
+      handler: 'src/functions/admin/restoreSubmission.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'post',
+            path: '/admin/submissions/{submissionId}/restore'
+          }
+        }
+      ]
+    },
     adminDeleteSubmission: {
       handler: 'src/functions/admin/deleteSubmission.handler',
       events: [
@@ -435,6 +447,18 @@ const serverlessConfiguration = {
           httpApi: {
             method: 'get',
             path: '/downloads/{submissionId}/{token}'
+          }
+        }
+      ]
+    },
+    checkRestoreStatus: {
+      handler: 'src/functions/checkRestoreStatus.handler',
+      timeout: 60,
+      events: [
+        {
+          schedule: {
+            rate: 'rate(15 minutes)',
+            enabled: true
           }
         }
       ]

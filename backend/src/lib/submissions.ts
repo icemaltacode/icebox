@@ -50,6 +50,10 @@ export type SubmissionRecord = {
   deletedAt?: string | null;
   deletedBy?: string | null;
   downloadBaseUrl?: string | null;
+  restoreRequestedAt?: string | null;
+  restoreRequestedBy?: string | null;
+  restoreCompletedAt?: string | null;
+  restoreExpiresAt?: string | null;
 };
 
 const toSubmissionFileRecord = (item: unknown): SubmissionFileRecord | undefined => {
@@ -120,7 +124,11 @@ export const toSubmissionRecord = (item: Record<string, unknown>): SubmissionRec
     reminderCount: optionalNumber(item.reminderCount),
     deletedAt: optionalString(item.deletedAt) ?? null,
     deletedBy: optionalString(item.deletedBy) ?? null,
-    downloadBaseUrl: optionalString(item.downloadBaseUrl) ?? null
+    downloadBaseUrl: optionalString(item.downloadBaseUrl) ?? null,
+    restoreRequestedAt: optionalString(item.restoreRequestedAt) ?? null,
+    restoreRequestedBy: optionalString(item.restoreRequestedBy) ?? null,
+    restoreCompletedAt: optionalString(item.restoreCompletedAt) ?? null,
+    restoreExpiresAt: optionalString(item.restoreExpiresAt) ?? null
   };
 };
 
