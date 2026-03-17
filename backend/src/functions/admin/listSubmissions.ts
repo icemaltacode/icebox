@@ -319,10 +319,21 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const startIndex = (safePage - 1) * pageSize;
   const items = sorted.slice(startIndex, startIndex + pageSize);
 
+  // S3 lifecycle does not transition objects smaller than 128 KB to Glacier
+  const GLACIER_MIN_BYTES = 128 * 1024;
+
   // Enrich paginated items with storage class info (only for items that may be archived)
   const now = Date.now();
   await Promise.all(
     items.map(async (item) => {
+      // Small files will never be transitioned by S3 — hide lifecycle dates
+      if (item.totalSize < GLACIER_MIN_BYTES) {
+        item.storageClass = 'STANDARD';
+        item.archiveTransitionAt = null;
+        item.deletionAt = null;
+        return;
+      }
+
       const transitionAt = item.archiveTransitionAt ? Date.parse(item.archiveTransitionAt) : Infinity;
       if (transitionAt > now || !item.files.length) {
         item.storageClass = 'STANDARD';
