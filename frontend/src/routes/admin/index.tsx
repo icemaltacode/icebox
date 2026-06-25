@@ -640,6 +640,9 @@ const CourseAssignmentsView = () => {
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+// Course codes are used as a URL path segment, so they must be URL-safe (RFC 3986 unreserved set).
+// Anything needing percent-encoding (slashes, colons, spaces, full URLs) breaks update/delete routing.
+const courseCodePattern = /^[A-Za-z0-9._~-]+$/;
 
 type CourseFormProps = {
   initialValues: CourseAssignment | null;
@@ -673,6 +676,12 @@ const CourseForm = ({ initialValues, onSubmit, onCancel, isSubmitting }: CourseF
 
     if (!trimmedCode) {
       setError('Course code is required.');
+      return;
+    }
+    if (!isEditing && !courseCodePattern.test(trimmedCode)) {
+      setError(
+        'Course code may only contain letters, numbers, and . _ ~ - (no spaces, slashes, or URLs).'
+      );
       return;
     }
     if (!trimmedCourseName) {
