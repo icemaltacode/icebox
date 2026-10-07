@@ -11,7 +11,7 @@ const Logo = () => (
       loading="lazy"
       decoding="async"
     />
-    <span className="text-xl font-semibold tracking-tight text-primary drop-shadow-sm sm:text-2xl">
+    <span className="text-xl font-semibold tracking-tight text-primary drop-shadow-xs sm:text-2xl">
       ICEBox
     </span>
   </div>
@@ -19,7 +19,7 @@ const Logo = () => (
 
 export const AppLayout = () => (
   <div className="min-h-screen bg-background text-foreground">
-    <header className="border-b border-border bg-card/60 backdrop-blur">
+    <header className="border-b border-border bg-card/60 backdrop-blur-sm">
       <div className="mx-auto flex h-20 max-w-5xl items-center justify-between px-4 sm:px-8">
         <Logo />
         <ModeToggle />

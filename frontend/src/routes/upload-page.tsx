@@ -830,7 +830,7 @@ export const UploadPage = () => {
   if (requireVleToken && !tokenChecked) {
     return (
       <div className="mx-auto max-w-3xl space-y-6 py-12">
-        <Card className="bg-card/80 shadow-sm">
+        <Card className="bg-card/80 shadow-xs">
           <CardHeader className="flex flex-col items-center gap-3 text-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             <CardTitle className="text-lg">Verifying access…</CardTitle>
@@ -846,7 +846,7 @@ export const UploadPage = () => {
   if (requireVleToken && tokenChecked && !tokenValid) {
     return (
       <div className="mx-auto max-w-3xl space-y-6 py-12">
-        <Card className="bg-card/80 shadow-sm">
+        <Card className="bg-card/80 shadow-xs">
           <CardHeader>
             <CardTitle>Launch ICEBox from Circle Learn</CardTitle>
             <CardDescription>
@@ -872,10 +872,10 @@ export const UploadPage = () => {
       </section>
 
       {!uploadResult && (
-        <form className="grid gap-6 lg:grid-cols-[2fr,1fr] lg:items-start" onSubmit={onSubmit}>
+        <form className="grid gap-6 lg:grid-cols-[2fr_1fr] lg:items-start" onSubmit={onSubmit}>
           <Card
             className={cn(
-              'flex flex-col border-2 border-dashed border-border bg-card/70 shadow-sm transition-colors lg:h-full',
+              'flex flex-col border-2 border-dashed border-border bg-card/70 shadow-xs transition-colors lg:h-full',
               isDragActive && 'border-primary bg-primary/5'
             )}
           >
@@ -1013,7 +1013,7 @@ export const UploadPage = () => {
           </CardFooter>
           </Card>
 
-          <Card className="bg-card/80 shadow-sm flex flex-col lg:h-full">
+          <Card className="bg-card/80 shadow-xs flex flex-col lg:h-full">
           <CardHeader>
             <CardTitle className="text-xl">Submission details</CardTitle>
             <CardDescription>
@@ -1259,7 +1259,7 @@ export const UploadPage = () => {
       )}
 
       {uploadResult && (
-        <Card className="bg-card/80 shadow-sm">
+        <Card className="bg-card/80 shadow-xs">
           <CardHeader>
             <CardTitle>Submission complete</CardTitle>
             <CardDescription>

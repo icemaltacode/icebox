@@ -44,7 +44,7 @@ const AdminNavigation = () => (
           className={({ isActive }) =>
             cn(
               'flex items-center gap-3 rounded-lg border border-border bg-card/60 px-4 py-3 transition hover:border-primary hover:bg-primary/10 hover:text-primary',
-              isActive && 'border-primary bg-primary/10 text-primary shadow-sm'
+              isActive && 'border-primary bg-primary/10 text-primary shadow-xs'
             )
           }
         >
@@ -69,7 +69,7 @@ export const AdminLayout = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card/60 backdrop-blur">
+      <header className="border-b border-border bg-card/60 backdrop-blur-sm">
         <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-4 sm:px-8">
           <div className="flex items-center gap-3">
             <img
@@ -80,7 +80,7 @@ export const AdminLayout = () => {
               decoding="async"
             />
             <div className="flex flex-col leading-tight">
-              <span className="text-xl font-semibold tracking-tight text-primary drop-shadow-sm sm:text-2xl">
+              <span className="text-xl font-semibold tracking-tight text-primary drop-shadow-xs sm:text-2xl">
                 ICEBox
               </span>
               <span className="text-sm font-medium text-muted-foreground">Admin</span>
