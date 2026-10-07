@@ -39,5 +39,8 @@
     "archiver": "^6.0.1",
     "jose": "^5.9.4",
     "uuid": "^13.0.0"
+  },
+  "allowScripts": {
+    "serverless@4.22.0": true
   }
 }
