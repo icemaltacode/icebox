@@ -9,8 +9,11 @@ import {
   Clock3,
   Download,
   FileText,
+  FolderOpen,
+  HardDriveUpload,
   Loader2,
   RefreshCw,
+  ShieldCheck,
   Snowflake,
   Trash2,
   Upload
@@ -32,6 +35,14 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -51,11 +62,14 @@ import {
 } from '@/components/ui/tooltip';
 import { useAdminApi } from '@/hooks/use-admin-api';
 import { useToast } from '@/hooks/use-toast';
-import type {
-  AdminSubmission,
-  ListCoursesResponse,
-  ListSubmissionsRequest,
-  ListSubmissionsResponse
+import {
+  NO_PROJECT_FILTER,
+  type AdminSubmission,
+  type ListCoursesResponse,
+  type ListSubmissionsRequest,
+  type ListSubmissionsResponse,
+  type SubmissionBackupFilter,
+  type UpdateSubmissionBackupPayload
 } from '@/lib/admin-api';
 import { cn } from '@/lib/utils';
 
@@ -73,12 +87,19 @@ const SORT_OPTIONS: Array<{ value: ListSubmissionsRequest['sortField']; label: s
   { value: 'completedAt', label: 'Date processed' },
   { value: 'courseId', label: 'Course code' },
   { value: 'courseName', label: 'Course name' },
+  { value: 'projectName', label: 'Project' },
   { value: 'educatorName', label: 'Educator name' },
   { value: 'studentName', label: 'Student name' },
   { value: 'status', label: 'Status' },
   { value: 'fileCount', label: 'File count' },
   { value: 'totalSize', label: 'Total size' }
 ];
+
+const BACKUP_FILTER_LABELS: Record<SubmissionBackupFilter, string> = {
+  not_on_drive: 'Not on Drive',
+  not_checked: 'Not checked',
+  complete: 'Fully backed up'
+};
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
@@ -181,6 +202,84 @@ const getGlacierState = (submission: AdminSubmission): GlacierState => {
   return 'archived';
 };
 
+const describeBackupTick = (by: string | null, at: string | null): string => {
+  const when = formatTimeline(at).text;
+  return by ? `by ${by}, ${when}` : when;
+};
+
+type BackupMenuProps = {
+  submission: AdminSubmission;
+  pending: boolean;
+  onChange: (changes: UpdateSubmissionBackupPayload) => void;
+  className?: string;
+};
+
+// Two independent ticks used by operations to track the manual Drive backup of each upload.
+const BackupMenu = ({ submission, pending, onChange, className }: BackupMenuProps) => {
+  const onDrive = Boolean(submission.driveUploadedAt);
+  const checked = Boolean(submission.backupCheckedAt);
+  const complete = onDrive && checked;
+  const label = complete ? 'Backed up' : onDrive ? 'On Drive' : checked ? 'Checked' : 'Backup';
+  const Icon = complete ? ShieldCheck : HardDriveUpload;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          className={cn(
+            complete && 'border-emerald-500 text-emerald-600 dark:border-emerald-400 dark:text-emerald-300',
+            className
+          )}
+        >
+          {pending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Icon className="mr-2 h-4 w-4" />
+          )}
+          {label}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>Backup tracking</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem
+          checked={onDrive}
+          disabled={pending}
+          onSelect={(event) => event.preventDefault()}
+          onCheckedChange={(value) => onChange({ driveUploaded: value === true })}
+        >
+          <div className="flex flex-col">
+            <span>Uploaded to Drive</span>
+            {onDrive ? (
+              <span className="text-xs text-muted-foreground">
+                {describeBackupTick(submission.driveUploadedBy, submission.driveUploadedAt)}
+              </span>
+            ) : null}
+          </div>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={checked}
+          disabled={pending}
+          onSelect={(event) => event.preventDefault()}
+          onCheckedChange={(value) => onChange({ backupChecked: value === true })}
+        >
+          <div className="flex flex-col">
+            <span>Backup Checked</span>
+            {checked ? (
+              <span className="text-xs text-muted-foreground">
+                {describeBackupTick(submission.backupCheckedBy, submission.backupCheckedAt)}
+              </span>
+            ) : null}
+          </div>
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
 const useDebouncedValue = (value: string, delay = 300) => {
   const [debounced, setDebounced] = useState(value);
 
@@ -203,6 +302,8 @@ export const AdminSubmissionsPage = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [accessedFilter, setAccessedFilter] = useState<'viewed' | 'not_viewed' | ''>('');
   const [courseFilter, setCourseFilter] = useState<string>('');
+  const [projectFilter, setProjectFilter] = useState<string>('');
+  const [backupFilter, setBackupFilter] = useState<SubmissionBackupFilter | ''>('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   const [sortField, setSortField] = useState<ListSubmissionsRequest['sortField']>('createdAt');
@@ -212,7 +313,17 @@ export const AdminSubmissionsPage = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, statusFilter, accessedFilter, courseFilter, sortField, sortOrder, pageSize]);
+  }, [
+    debouncedSearch,
+    statusFilter,
+    accessedFilter,
+    courseFilter,
+    projectFilter,
+    backupFilter,
+    sortField,
+    sortOrder,
+    pageSize
+  ]);
 
   const listParams = useMemo<ListSubmissionsRequest>(() => ({
     page,
@@ -220,9 +331,11 @@ export const AdminSubmissionsPage = () => {
     search: debouncedSearch || undefined,
     accessed: accessedFilter || undefined,
     courseId: courseFilter || undefined,
+    project: projectFilter || undefined,
+    backup: backupFilter || undefined,
     sortField,
     sortOrder
-  }), [page, pageSize, debouncedSearch, accessedFilter, courseFilter, sortField, sortOrder]);
+  }), [page, pageSize, debouncedSearch, accessedFilter, courseFilter, projectFilter, backupFilter, sortField, sortOrder]);
 
   const queryKey = useMemo(
     () => ['admin', 'submissions', listParams],
@@ -311,6 +424,45 @@ export const AdminSubmissionsPage = () => {
     }
   });
 
+  const backupMutation = useMutation({
+    mutationFn: ({ submissionId, changes }: { submissionId: string; changes: UpdateSubmissionBackupPayload }) =>
+      adminApi.updateSubmissionBackup(submissionId, changes),
+    onSuccess: ({ submissionId, ...backupState }) => {
+      // Patch the cached rows instead of refetching: the list endpoint scans the whole table.
+      queryClient.setQueriesData<ListSubmissionsResponse>({ queryKey: ['admin', 'submissions'] }, (previous) =>
+        previous
+          ? {
+              ...previous,
+              items: previous.items.map((item) =>
+                item.submissionId === submissionId ? { ...item, ...backupState } : item
+              )
+            }
+          : previous
+      );
+      // With a backup filter active, refetch so updated rows drop out and pagination stays consistent.
+      if (backupFilter) {
+        queryClient.invalidateQueries({ queryKey: ['admin', 'submissions'] });
+      }
+    },
+    onError: (err) => {
+      toast({
+        title: 'Failed to update backup status',
+        description: err instanceof Error ? err.message : 'Could not update the backup status.',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const isBackupPending = (submissionId: string) =>
+    backupMutation.isPending && backupMutation.variables?.submissionId === submissionId;
+
+  const projectOptions = useMemo(() => {
+    const projects = data?.projects ?? [];
+    return projectFilter && projectFilter !== NO_PROJECT_FILTER && !projects.includes(projectFilter)
+      ? [projectFilter, ...projects]
+      : projects;
+  }, [data?.projects, projectFilter]);
+
   const rawSubmissions: AdminSubmission[] = data?.items ?? [];
   const filteredSubmissions = rawSubmissions.filter((submission) => {
     if (statusFilter === 'accessed' && !submission.lastAccessedAt) {
@@ -350,6 +502,8 @@ export const AdminSubmissionsPage = () => {
       statusFilter ||
       accessedFilter ||
       courseFilter ||
+      projectFilter ||
+      backupFilter ||
       sortField !== 'createdAt' ||
       sortOrder !== 'desc' ||
       pageSize !== PAGE_SIZE_OPTIONS[0]
@@ -371,7 +525,7 @@ export const AdminSubmissionsPage = () => {
         <Input
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Search by course, educator, student or file"
+          placeholder="Search by course, project, educator, student or file"
           className="max-w-lg"
         />
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -388,6 +542,16 @@ export const AdminSubmissionsPage = () => {
           {accessedFilter ? (
             <span>
               Accessed <strong>{accessedFilter === 'viewed' ? 'Viewed' : 'Not viewed'}</strong>
+            </span>
+          ) : null}
+          {projectFilter ? (
+            <span>
+              Project <strong>{projectFilter === NO_PROJECT_FILTER ? 'No project' : projectFilter}</strong>
+            </span>
+          ) : null}
+          {backupFilter ? (
+            <span>
+              Backup <strong>{BACKUP_FILTER_LABELS[backupFilter]}</strong>
             </span>
           ) : null}
         </div>
@@ -411,6 +575,8 @@ export const AdminSubmissionsPage = () => {
                     setStatusFilter('');
                     setAccessedFilter('');
                     setCourseFilter('');
+                    setProjectFilter('');
+                    setBackupFilter('');
                     setSortField('createdAt');
                     setSortOrder('desc');
                     setPageSize(PAGE_SIZE_OPTIONS[0]);
@@ -467,6 +633,26 @@ export const AdminSubmissionsPage = () => {
               </SelectContent>
             </Select>
           </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs uppercase text-muted-foreground">Project</Label>
+            <Select value={projectFilter || 'all'} onValueChange={(value) => setProjectFilter(value === 'all' ? '' : value)}>
+              <SelectTrigger className="min-w-[200px]">
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectGroup>
+                  <SelectLabel>Projects</SelectLabel>
+                  <SelectItem value="all">All projects</SelectItem>
+                  <SelectItem value={NO_PROJECT_FILTER}>No project</SelectItem>
+                  {projectOptions.map((project) => (
+                    <SelectItem key={project} value={project}>
+                      {project}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs uppercase text-muted-foreground">Accessed</Label>
               <Select
@@ -487,6 +673,30 @@ export const AdminSubmissionsPage = () => {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs uppercase text-muted-foreground">Backup</Label>
+            <Select
+              value={backupFilter || 'all'}
+              onValueChange={(value) =>
+                setBackupFilter(value === 'all' ? '' : (value as SubmissionBackupFilter))
+              }
+            >
+              <SelectTrigger className="min-w-[170px]">
+                <SelectValue placeholder="All submissions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Backup</SelectLabel>
+                  <SelectItem value="all">All submissions</SelectItem>
+                  {(Object.keys(BACKUP_FILTER_LABELS) as SubmissionBackupFilter[]).map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {BACKUP_FILTER_LABELS[value]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs uppercase text-muted-foreground">Sort by</Label>
@@ -627,6 +837,12 @@ export const AdminSubmissionsPage = () => {
                       <div className="text-xs text-muted-foreground">
                         {submission.courseName ?? 'No name configured'}
                       </div>
+                      {submission.projectName ? (
+                        <div className="mt-1 flex items-start gap-1 text-xs font-medium text-foreground">
+                          <FolderOpen className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                          <span>{submission.projectName}</span>
+                        </div>
+                      ) : null}
                       <div
                         className={cn(
                           'mt-2 inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-xs',
@@ -762,6 +978,13 @@ export const AdminSubmissionsPage = () => {
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end gap-2">
+                        <BackupMenu
+                          submission={submission}
+                          pending={isBackupPending(submission.submissionId)}
+                          onChange={(changes) =>
+                            backupMutation.mutate({ submissionId: submission.submissionId, changes })
+                          }
+                        />
                         <Button
                           variant="outline"
                           size="sm"
@@ -862,6 +1085,12 @@ export const AdminSubmissionsPage = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 text-sm">
+                    {submission.projectName ? (
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">Project</p>
+                        <p className="font-medium text-foreground">{submission.projectName}</p>
+                      </div>
+                    ) : null}
                     <div>
                       <p className="text-xs font-semibold uppercase text-muted-foreground">Educator</p>
                       <p className="font-medium text-foreground">{submission.educatorName ?? '—'}</p>
@@ -976,6 +1205,14 @@ export const AdminSubmissionsPage = () => {
                       )}
                     </div>
                     <div className="flex gap-2">
+                      <BackupMenu
+                        className="flex-1"
+                        submission={submission}
+                        pending={isBackupPending(submission.submissionId)}
+                        onChange={(changes) =>
+                          backupMutation.mutate({ submissionId: submission.submissionId, changes })
+                        }
+                      />
                       <Button
                         className="flex-1"
                         variant="outline"

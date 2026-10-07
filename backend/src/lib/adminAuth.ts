@@ -30,7 +30,17 @@ export type AdminClaims = JWTPayload & {
   'cognito:username'?: string;
 };
 
-const getAuthorizationHeader = (headers?: APIGatewayProxyEventHeaders): string => {
+export const resolveActorEmail = (claims: AdminClaims): string => {
+  if (claims.email) {
+    return claims.email;
+  }
+  if (claims['cognito:username']) {
+    return claims['cognito:username'] as string;
+  }
+  return 'unknown-admin@icecampus.com';
+};
+
+const getAuthorizationHeader =(headers?: APIGatewayProxyEventHeaders): string => {
   const headerValue = headers?.authorization ?? headers?.Authorization;
   if (!headerValue) {
     throw new UnauthorizedError('Missing Authorization header');

@@ -54,6 +54,21 @@ export type SubmissionRecord = {
   restoreRequestedBy?: string | null;
   restoreCompletedAt?: string | null;
   restoreExpiresAt?: string | null;
+  projectName?: string | null;
+  driveUploadedAt?: string | null;
+  driveUploadedBy?: string | null;
+  backupCheckedAt?: string | null;
+  backupCheckedBy?: string | null;
+};
+
+const PROJECT_NAME_MAX_LENGTH = 200;
+
+export const normalizeProjectName = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.replace(/\s+/g, ' ').trim().slice(0, PROJECT_NAME_MAX_LENGTH).trim();
+  return normalized.length > 0 ? normalized : null;
 };
 
 const toSubmissionFileRecord = (item: unknown): SubmissionFileRecord | undefined => {
@@ -128,9 +143,76 @@ export const toSubmissionRecord = (item: Record<string, unknown>): SubmissionRec
     restoreRequestedAt: optionalString(item.restoreRequestedAt) ?? null,
     restoreRequestedBy: optionalString(item.restoreRequestedBy) ?? null,
     restoreCompletedAt: optionalString(item.restoreCompletedAt) ?? null,
-    restoreExpiresAt: optionalString(item.restoreExpiresAt) ?? null
+    restoreExpiresAt: optionalString(item.restoreExpiresAt) ?? null,
+    projectName: optionalString(item.projectName) ?? null,
+    driveUploadedAt: optionalString(item.driveUploadedAt) ?? null,
+    driveUploadedBy: optionalString(item.driveUploadedBy) ?? null,
+    backupCheckedAt: optionalString(item.backupCheckedAt) ?? null,
+    backupCheckedBy: optionalString(item.backupCheckedBy) ?? null
   };
 };
+
+type DownloadNameSource = {
+  courseId?: string | null;
+  projectName?: string | null;
+  studentName?: string | null;
+  studentEmail?: string | null;
+  studentId?: string | null;
+};
+
+const FILE_NAME_SEGMENT_MAX_LENGTH = 80;
+
+// Strips characters that are invalid in filenames on common platforms and collapses whitespace.
+const toFileNameSegment = (value: string | null | undefined): string =>
+  (value ?? '')
+    .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, FILE_NAME_SEGMENT_MAX_LENGTH)
+    .trim();
+
+export const isArchiveObjectKey = (objectKey: string): boolean => objectKey.startsWith('archives/');
+
+// Builds a human-readable download name: <course>_<project>_<student>.zip for archives, and the
+// same prefix plus the original file name for single-file submissions.
+export const buildDownloadFileName = (
+  source: DownloadNameSource,
+  file: { fileName?: string | null; objectKey: string }
+): string => {
+  const prefix = [
+    source.courseId,
+    source.projectName,
+    source.studentName ?? source.studentEmail ?? source.studentId
+  ]
+    .map(toFileNameSegment)
+    .filter((segment) => segment.length > 0)
+    .join('_');
+
+  if (isArchiveObjectKey(file.objectKey)) {
+    return `${prefix || 'submission'}.zip`;
+  }
+
+  const originalName = (file.fileName ?? file.objectKey).split('/').pop() ?? '';
+  const baseName = toFileNameSegment(originalName) || 'file';
+  return prefix ? `${prefix}_${baseName}` : baseName;
+};
+
+const encodeRfc5987 = (value: string): string =>
+  encodeURIComponent(value).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+
+// The ASCII fallback is for clients that ignore filename*. Maltese ħ has no Unicode decomposition,
+// so it is mapped by hand; other accented letters lose their diacritics through NFKD.
+const toAsciiFileName = (value: string): string =>
+  value
+    .replace(/ħ/g, 'h')
+    .replace(/Ħ/g, 'H')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]/g, '')
+    .replace(/["\\]/g, '');
+
+export const buildContentDisposition = (fileName: string): string =>
+  `inline; filename="${toAsciiFileName(fileName) || 'download'}"; filename*=UTF-8''${encodeRfc5987(fileName)}`;
 
 export const calculateArchiveTransitionAt = (record: SubmissionRecord): string | null => {
   const baseIso = record.completedAt ?? record.createdAt;

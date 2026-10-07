@@ -8,6 +8,7 @@ import { getDynamoDbDocumentClient, getS3Client, getSesClient } from '../lib/aws
 import { ASSIGNMENTS_BUCKET, ASSIGNMENTS_TABLE, COURSES_TABLE, SES_SOURCE_EMAIL } from '../lib/env';
 import { buildWorkViewedEmail } from '../lib/emailTemplates';
 import { getStorageInfo, isGlacier } from '../lib/glacier';
+import { buildContentDisposition, buildDownloadFileName, toSubmissionRecord } from '../lib/submissions';
 
 const DOWNLOAD_LINK_TTL_SECONDS = 900;
 
@@ -76,10 +77,25 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     console.info('Allowing expired token for STANDARD-class file', { submissionId, objectKey });
   }
 
+  // Readable download name (instead of the S3 key's basename), worked out per request so it also
+  // applies to submissions made before project names existed.
+  let responseContentDisposition: string | undefined;
+  try {
+    const record = toSubmissionRecord(existing.Item as Record<string, unknown>);
+    const downloadName = buildDownloadFileName(record, {
+      fileName: matchedFile.fileName as string | null | undefined,
+      objectKey
+    });
+    responseContentDisposition = buildContentDisposition(downloadName);
+  } catch (error) {
+    console.warn('Failed to build download file name', { error, submissionId });
+  }
+
   const s3 = getS3Client();
   const command = new GetObjectCommand({
     Bucket: ASSIGNMENTS_BUCKET,
-    Key: objectKey
+    Key: objectKey,
+    ResponseContentDisposition: responseContentDisposition
   });
 
   const presignedUrl = await getSignedUrl(s3, command, { expiresIn: DOWNLOAD_LINK_TTL_SECONDS });
@@ -89,6 +105,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const studentEmail = existing.Item.studentEmail as string | undefined;
   const studentName = existing.Item.studentName as string | undefined;
   const courseId = existing.Item.courseId as string;
+  const projectName = (existing.Item.projectName as string | null | undefined) ?? undefined;
   const accessedAt = new Date().toISOString();
 
   const updateExpressionSegments = [
@@ -153,6 +170,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       const ses = getSesClient();
       const emailContent = buildWorkViewedEmail({
         courseDisplayName,
+        projectName,
         studentName,
         educatorName,
         accessedAtIso: accessedAt

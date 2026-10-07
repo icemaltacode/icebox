@@ -8,6 +8,7 @@ import { getDynamoDbDocumentClient, getS3Client, getSesClient } from '../lib/aws
 import { createZipArchive } from '../lib/archive';
 import { buildEducatorEmail, buildStudentEmail } from '../lib/emailTemplates';
 import { ASSIGNMENTS_BUCKET, ASSIGNMENTS_TABLE, COURSES_TABLE, SES_SOURCE_EMAIL } from '../lib/env';
+import { buildDownloadFileName } from '../lib/submissions';
 
 type QueueMessage = {
   submissionId?: string;
@@ -28,6 +29,7 @@ type SubmissionRecord = {
   submissionId: string;
   status?: string;
   courseId?: string;
+  projectName?: string | null;
   comment?: string | null;
   studentEmail?: string | null;
   studentName?: string | null;
@@ -137,7 +139,7 @@ export const handler: SQSHandler = async (event) => {
 
         finalFiles = [
           {
-            fileName: `${submissionId}.zip`,
+            fileName: buildDownloadFileName(submission, { objectKey: archiveKey }),
             contentType: 'application/zip',
             size: archiveSize,
             objectKey: archiveKey,
@@ -237,6 +239,7 @@ export const handler: SQSHandler = async (event) => {
         const studentName = submission.studentName ?? undefined;
         const studentId = submission.studentId ?? undefined;
         const comment = submission.comment ?? undefined;
+        const projectName = submission.projectName ?? undefined;
         const educatorEmails = Array.isArray(submission.educatorEmails) ? submission.educatorEmails.filter(Boolean) : [];
         const resolvedEducatorEmails =
           educatorEmails.length > 0
@@ -249,6 +252,7 @@ export const handler: SQSHandler = async (event) => {
           try {
             const studentEmailContent = buildStudentEmail({
               courseDisplayName,
+              projectName,
               studentName,
               completedAtIso: completedAt,
               files: filesForEmail
@@ -279,6 +283,7 @@ export const handler: SQSHandler = async (event) => {
             const educatorEmailContent = buildEducatorEmail({
               courseDisplayName,
               courseCode: courseId,
+              projectName,
               educatorName: courseDetails.educatorName,
               studentName,
               studentId,

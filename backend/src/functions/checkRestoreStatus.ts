@@ -9,6 +9,7 @@ import { buildRestoreBatchCompleteEmail } from '../lib/emailTemplates';
 
 type CompletedRestore = {
   courseDisplayName: string;
+  projectName: string | null;
   studentName: string | null;
   restoreExpiresAtIso: string;
 };
@@ -21,6 +22,7 @@ export const handler: ScheduledHandler = async () => {
     objectKey: string;
     restoreRequestedBy: string | null;
     courseId: string;
+    projectName: string | null;
     studentName: string | null;
   }> = [];
 
@@ -46,6 +48,7 @@ export const handler: ScheduledHandler = async () => {
           objectKey: files[0].objectKey as string,
           restoreRequestedBy: (item.restoreRequestedBy as string) ?? null,
           courseId: (item.courseId as string) ?? '',
+          projectName: (item.projectName as string) ?? null,
           studentName: (item.studentName as string) ?? null
         });
       }
@@ -118,6 +121,7 @@ export const handler: ScheduledHandler = async () => {
         const items = completedByAdmin.get(pending.restoreRequestedBy) ?? [];
         items.push({
           courseDisplayName,
+          projectName: pending.projectName,
           studentName: pending.studentName,
           restoreExpiresAtIso
         });

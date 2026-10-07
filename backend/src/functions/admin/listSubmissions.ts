@@ -25,6 +25,7 @@ const SORT_FIELDS = [
   'lastAccessedAt',
   'courseId',
   'courseName',
+  'projectName',
   'educatorName',
   'studentName',
   'status',
@@ -38,6 +39,7 @@ type EnrichedSubmission = {
   submissionId: string;
   courseId: string;
   courseName: string | null;
+  projectName: string | null;
   educatorName: string | null;
   educatorEmails: string[];
   studentName: string | null;
@@ -61,6 +63,48 @@ type EnrichedSubmission = {
   storageClass: string | null;
   restoreStatus: string | null;
   restoreExpiresAt: string | null;
+  driveUploadedAt: string | null;
+  driveUploadedBy: string | null;
+  backupCheckedAt: string | null;
+  backupCheckedBy: string | null;
+};
+
+// Sentinel value for the project filter that matches submissions without a project.
+const NO_PROJECT_FILTER = '__none__';
+
+const BACKUP_FILTERS = ['not_on_drive', 'not_checked', 'complete'] as const;
+type BackupFilter = (typeof BACKUP_FILTERS)[number];
+
+const normalizeBackupFilter = (value: string | undefined): BackupFilter | null => {
+  const candidate = (value ?? '').trim().toLowerCase() as BackupFilter;
+  return BACKUP_FILTERS.includes(candidate) ? candidate : null;
+};
+
+const matchesBackupFilter = (submission: EnrichedSubmission, filter: BackupFilter): boolean => {
+  switch (filter) {
+    case 'not_on_drive':
+      return !submission.driveUploadedAt;
+    case 'not_checked':
+      return !submission.backupCheckedAt;
+    case 'complete':
+      return Boolean(submission.driveUploadedAt && submission.backupCheckedAt);
+  }
+};
+
+// Distinct project names (case-insensitive), in natural order so "Self Study 10" follows "Self Study 9".
+const collectProjectNames = (submissions: EnrichedSubmission[]): string[] => {
+  const byKey = new Map<string, string>();
+  for (const submission of submissions) {
+    if (submission.projectName) {
+      const key = submission.projectName.toLowerCase();
+      if (!byKey.has(key)) {
+        byKey.set(key, submission.projectName);
+      }
+    }
+  }
+  return Array.from(byKey.values()).sort((left, right) =>
+    left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' })
+  );
 };
 
 const normalizeSortField = (value: string | undefined): SortField => {
@@ -145,6 +189,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const courseFilter = parseList(query.courseId).map((value) => value.toLowerCase());
   const educatorFilter = parseList(query.educatorEmail).map((value) => value.toLowerCase());
   const studentFilter = (query.student ?? '').trim().toLowerCase();
+  const projectFilter = (query.project ?? '').trim().toLowerCase();
+  const backupFilter = normalizeBackupFilter(query.backup);
   const accessedFilter = (query.accessed ?? '').trim().toLowerCase();
   const createdAfter = parseDate(query.createdAfter);
   const createdBefore = parseDate(query.createdBefore);
@@ -183,6 +229,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
             submissionId: record.submissionId,
             courseId: record.courseId,
             courseName: record.courseName ?? null,
+            projectName: record.projectName ?? null,
             educatorName: record.courseEducatorName ?? null,
             educatorEmails: record.educatorEmails,
             studentName: record.studentName ?? null,
@@ -205,7 +252,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
             downloadBaseUrl: record.downloadBaseUrl ?? null,
             storageClass: null,
             restoreStatus: null,
-            restoreExpiresAt: record.restoreExpiresAt ?? null
+            restoreExpiresAt: record.restoreExpiresAt ?? null,
+            driveUploadedAt: record.driveUploadedAt ?? null,
+            driveUploadedBy: record.driveUploadedBy ?? null,
+            backupCheckedAt: record.backupCheckedAt ?? null,
+            backupCheckedBy: record.backupCheckedBy ?? null
           });
         } catch (error) {
           if (error instanceof ValidationError) {
@@ -223,12 +274,34 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ message: 'Failed to load submissions' }) };
   }
 
+  const matchesCourseFilter = (submission: EnrichedSubmission) =>
+    courseFilter.length === 0 || courseFilter.includes(submission.courseId.toLowerCase());
+
+  // Scoped to the course filter only, so the project dropdown narrows when a course is picked.
+  const projects = collectProjectNames(submissions.filter(matchesCourseFilter));
+
   const filtered = submissions.filter((submission) => {
     if (statusFilter.length > 0 && !statusFilter.includes(submission.status.toUpperCase())) {
       return false;
     }
 
-    if (courseFilter.length > 0 && !courseFilter.includes(submission.courseId.toLowerCase())) {
+    if (!matchesCourseFilter(submission)) {
+      return false;
+    }
+
+    if (projectFilter === NO_PROJECT_FILTER.toLowerCase() && submission.projectName) {
+      return false;
+    }
+
+    if (
+      projectFilter &&
+      projectFilter !== NO_PROJECT_FILTER.toLowerCase() &&
+      submission.projectName?.toLowerCase() !== projectFilter
+    ) {
+      return false;
+    }
+
+    if (backupFilter && !matchesBackupFilter(submission, backupFilter)) {
       return false;
     }
 
@@ -277,6 +350,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       submission.submissionId,
       submission.courseId,
       submission.courseName ?? '',
+      submission.projectName ?? '',
       submission.educatorName ?? '',
       submission.studentName ?? '',
       submission.studentEmail ?? '',
@@ -366,7 +440,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       page: safePage,
       pageSize,
       totalPages,
-      totalCount
+      totalCount,
+      projects
     })
   };
 };

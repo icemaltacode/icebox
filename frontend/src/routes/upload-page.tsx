@@ -160,6 +160,7 @@ type UploadFormState = {
   studentId: string;
   studentName: string;
   courseId: string;
+  projectName: string;
   studentEmail: string;
   educatorEmail: string;
   comment: string;
@@ -228,17 +229,20 @@ export const UploadPage = () => {
   const studentNameParam = decodeParam(searchParams.get('studentName'));
   const courseCodeParam = decodeParam(searchParams.get('class') ?? searchParams.get('courseCode'));
   const studentIdParam = decodeParam(searchParams.get('studentId'));
+  // Set by the Circle integration from the lesson title the upload link sits under.
+  const projectParam = decodeParam(searchParams.get('project'));
 
   const initialFormState = useMemo<UploadFormState>(
     () => ({
       studentId: studentIdParam,
       studentName: studentNameParam,
       courseId: courseCodeParam,
+      projectName: projectParam,
       studentEmail: studentEmailParam,
       educatorEmail: '',
       comment: ''
     }),
-    [courseCodeParam, studentEmailParam, studentIdParam, studentNameParam]
+    [courseCodeParam, projectParam, studentEmailParam, studentIdParam, studentNameParam]
   );
 
   const requireVleToken = import.meta.env.VITE_REQUIRE_VLE_TOKEN === 'true';
@@ -428,9 +432,14 @@ export const UploadPage = () => {
   const prefilledStudentEmail = Boolean(studentEmailParam.trim());
   const prefilledCourseCode = Boolean(courseCodeParam.trim());
   const prefilledStudentId = Boolean(studentIdParam.trim());
+  const prefilledProject = Boolean(projectParam.trim());
 
   const hasPrefilledContext =
-    prefilledStudentName || prefilledStudentEmail || prefilledCourseCode || prefilledStudentId;
+    prefilledStudentName ||
+    prefilledStudentEmail ||
+    prefilledCourseCode ||
+    prefilledStudentId ||
+    prefilledProject;
 
   const courseListAvailable = !coursesError && courseGroups.length > 0;
   const selectValue = selectedCourse ? selectedCourse.courseCode : '';
@@ -704,6 +713,7 @@ export const UploadPage = () => {
         studentId: trimmedStudentId || undefined,
         studentName: trimmedStudentName || undefined,
         courseId: trimmedCourseId,
+        projectName: form.projectName.trim() || undefined,
         comment: form.comment.trim() || undefined,
         studentEmail: trimmedStudentEmail || undefined,
         educatorEmails: educatorEmailsPayload,
@@ -1041,6 +1051,14 @@ export const UploadPage = () => {
                     </p>
                   </div>
                 )}
+                {prefilledProject && (
+                  <div className="rounded-lg border border-border/80 bg-background/80 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Project
+                    </p>
+                    <p className="mt-2 text-lg font-semibold">{form.projectName}</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1192,6 +1210,22 @@ export const UploadPage = () => {
               </div>
             )}
 
+            {!prefilledProject && (
+              <div className="space-y-2">
+                <Label htmlFor="projectName">Project (optional)</Label>
+                <Input
+                  id="projectName"
+                  value={form.projectName}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, projectName: event.target.value }))
+                  }
+                  placeholder="e.g. Self Study 1"
+                  disabled={isUploading}
+                  autoComplete="off"
+                />
+              </div>
+            )}
+
             {!prefilledStudentId && (
               <div className="space-y-2">
                 <Label htmlFor="studentId">Student ID (optional)</Label>
@@ -1229,6 +1263,11 @@ export const UploadPage = () => {
           <CardHeader>
             <CardTitle>Submission complete</CardTitle>
             <CardDescription>
+              {form.projectName.trim() ? (
+                <>
+                  Project <span className="font-semibold">{form.projectName.trim()}</span>.{' '}
+                </>
+              ) : null}
               Reference ID <span className="font-semibold">{uploadResult.submissionId}</span>.
               Download links stay active for 28 days after completion.
             </CardDescription>

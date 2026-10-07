@@ -6,11 +6,13 @@ import { v4 as uuid } from 'uuid';
 
 import { getDynamoDbDocumentClient, getS3Client } from '../lib/aws';
 import { ASSIGNMENTS_BUCKET, ASSIGNMENTS_TABLE, COURSES_TABLE } from '../lib/env';
+import { normalizeProjectName } from '../lib/submissions';
 
 type CreateUploadSessionBody = {
   studentId?: string;
   studentName?: string;
   courseId?: string;
+  projectName?: string;
   files?: Array<{
     fileName?: string;
     contentType?: string;
@@ -34,6 +36,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
 
   const { studentId, studentName, courseId, files, comment, studentEmail, educatorEmails } = payload;
+  const projectName = normalizeProjectName(payload.projectName);
 
   if (!courseId || !files || files.length === 0) {
     return {
@@ -155,6 +158,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         studentId,
         studentName: studentName ?? null,
         courseId,
+        projectName,
         createdAt: timestamp,
         updatedAt: timestamp,
         comment: comment ?? null,

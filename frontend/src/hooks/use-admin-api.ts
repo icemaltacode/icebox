@@ -19,9 +19,11 @@ import {
   type SaveCoursePayload,
   type UpdateAdminUserPayload,
   type InviteAdminUserPayload,
+  type UpdateSubmissionBackupPayload,
   remindSubmission,
   deleteSubmission,
   restoreSubmission,
+  updateSubmissionBackup,
   updateAdminUser,
   updateCourse
 } from '@/lib/admin-api';
@@ -74,6 +76,8 @@ export const useAdminApi = () => {
     deleteSubmission: (submissionId: string) =>
       withToken((token) => deleteSubmission(token, submissionId)),
     restoreSubmission: (submissionId: string) =>
-      withToken((token) => restoreSubmission(token, submissionId))
+      withToken((token) => restoreSubmission(token, submissionId)),
+    updateSubmissionBackup: (submissionId: string, payload: UpdateSubmissionBackupPayload) =>
+      withToken((token) => updateSubmissionBackup(token, submissionId, payload))
   };
 };

@@ -418,6 +418,17 @@ const serverlessConfiguration = {
         }
       ]
     },
+    adminUpdateSubmissionBackup: {
+      handler: 'src/functions/admin/updateSubmissionBackup.handler',
+      events: [
+        {
+          httpApi: {
+            method: 'put',
+            path: '/admin/submissions/{submissionId}/backup'
+          }
+        }
+      ]
+    },
     adminDeleteSubmission: {
       handler: 'src/functions/admin/deleteSubmission.handler',
       events: [

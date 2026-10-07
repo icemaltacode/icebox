@@ -28,6 +28,7 @@ export type CreateUploadSessionPayload = {
   studentId?: string;
   studentName?: string;
   courseId: string;
+  projectName?: string;
   comment?: string;
   studentEmail?: string;
   educatorEmails?: string[];

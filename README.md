@@ -28,6 +28,9 @@ See [Architecture Diagrams](docs/Architecture.md).
 - HTML email templates (SES) for educator, student, and admin communications.
 - Invite-only admin portal backed by Cognito with user management (invite, edit, reset password, delete).
 - Course assignment CRUD with search, sort, pagination, and guard rails for deleting.
+- Submissions tagged by project (taken from the Circle lesson title), with project search, sort, and filtering in the admin console.
+- Backup tracking per submission ("Uploaded to Drive" and "Backup Checked"), recording who ticked each step and when.
+- Readable download file names (`<course>_<project>_<student>.zip`) instead of internal IDs.
 - S3 lifecycle management: transition uploads to Glacier after 30 days, purge after 180.
 - Front-end theme controls, reusable UI primitives, and course dropdowns populated from DynamoDB.
 
@@ -185,10 +188,10 @@ Refer to [`docs/deploy.md`](docs/deploy.md) for certificate creation, CloudFront
 
 ## Upload flow (student-facing)
 
-1. Student arrives via a URL that may prefill query parameters (`studentEmail`, `studentName`, `class`, `studentId`).
+1. Student arrives via a URL that may prefill query parameters (`studentEmail`, `studentName`, `class`, `studentId`, `project`). The Circle script sets `project` from the lesson title unless the link already carries one.
 2. Required fields adjust dynamically:
    - Prefilled data hides redundant inputs.
-   - Missing parameters require manual entry.
+   - Missing parameters require manual entry (the project is optional).
    - Course codes populate from public courses (grouped by course name); unknown codes prompt a dropdown with warnings.
 3. Files can be dropped individually or as folders; UI groups folder uploads into a single progress row.
 4. After uploads complete, the API returns `PENDING_ARCHIVE` and the frontend polls `/uploads/{submissionId}` until `COMPLETED`.

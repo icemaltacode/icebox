@@ -3,20 +3,16 @@ import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getDynamoDbDocumentClient } from '../../lib/aws';
 import { ASSIGNMENTS_TABLE } from '../../lib/env';
-import { AdminAuthConfigurationError, AdminClaims, requireAdminClaims, UnauthorizedError } from '../../lib/adminAuth';
+import {
+  AdminAuthConfigurationError,
+  AdminClaims,
+  requireAdminClaims,
+  resolveActorEmail,
+  UnauthorizedError
+} from '../../lib/adminAuth';
 import { toSubmissionRecord } from '../../lib/submissions';
 import { ValidationError } from '../../lib/errors';
 import { getStorageInfo, initiateRestore, isGlacier } from '../../lib/glacier';
-
-const resolveActorEmail = (claims: AdminClaims): string => {
-  if (claims.email) {
-    return claims.email;
-  }
-  if (claims['cognito:username']) {
-    return claims['cognito:username'] as string;
-  }
-  return 'unknown-admin@icecampus.com';
-};
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   let adminClaims: AdminClaims;

@@ -6,6 +6,7 @@ type EmailLink = {
 type EducatorEmailOptions = {
   courseDisplayName: string;
   courseCode: string;
+  projectName?: string;
   educatorName?: string;
   studentName?: string;
   studentId?: string;
@@ -19,6 +20,7 @@ type EducatorEmailOptions = {
 
 type StudentEmailOptions = {
   courseDisplayName: string;
+  projectName?: string;
   studentName?: string;
   completedAtIso: string;
   files: EmailLink[];
@@ -26,6 +28,7 @@ type StudentEmailOptions = {
 
 type WorkViewedEmailOptions = {
   courseDisplayName: string;
+  projectName?: string;
   studentName?: string;
   educatorName?: string;
   accessedAtIso: string;
@@ -52,6 +55,10 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+
+// Prefixes the course display name with the project, e.g. "Self Study 1 · Python Foundations (code)".
+const withProject = (courseDisplayName: string, projectName?: string | null) =>
+  projectName ? `${projectName} · ${courseDisplayName}` : courseDisplayName;
 
 const formatTimestamp = (isoTimestamp: string) => {
   const date = new Date(isoTimestamp);
@@ -279,6 +286,7 @@ export const buildEducatorEmail = (options: EducatorEmailOptions) => {
   const {
     courseDisplayName,
     courseCode,
+    projectName,
     educatorName,
     studentName,
     studentId,
@@ -302,9 +310,10 @@ export const buildEducatorEmail = (options: EducatorEmailOptions) => {
   const reminderNoticeHtml = isReminder
     ? `<p style="${reminderNoticeStyles}"><strong>This assignment was submitted ${reminderDescriptor}</strong></p>`
     : '';
+  const subjectPrefix = projectName ? `[${courseCode}] - ${projectName} -` : `[${courseCode}] -`;
   const emailSubject = isReminder
-    ? `[${courseCode}] - Reminder: assignment upload by ${escapedStudentReference}`
-    : `[${courseCode}] - Assignment Upload by ${escapedStudentReference}`;
+    ? `${subjectPrefix} Reminder: assignment upload by ${escapedStudentReference}`
+    : `${subjectPrefix} Assignment Upload by ${escapedStudentReference}`;
   const headerTitle = isReminder ? 'Reminder: assignment awaiting download' : 'New student submission';
 
   return {
@@ -321,7 +330,7 @@ export const buildEducatorEmail = (options: EducatorEmailOptions) => {
                   style="height:40px; width:auto; display:block; margin:0;"
                 />
                 <h1 style="margin: 12px 0 0; font-size: 24px;">${headerTitle}</h1>
-                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
+                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(withProject(courseDisplayName, projectName))}</p>
               </div>
               <div style="${sectionStyles}">
                 ${reminderNoticeHtml}
@@ -375,11 +384,12 @@ export const buildEducatorEmail = (options: EducatorEmailOptions) => {
 };
 
 export const buildStudentEmail = (options: StudentEmailOptions) => {
-  const { courseDisplayName, studentName, completedAtIso, files } = options;
+  const { courseDisplayName, projectName, studentName, completedAtIso, files } = options;
   const formattedTimestamp = formatTimestamp(completedAtIso);
+  const context = withProject(courseDisplayName, projectName);
 
   return {
-    subject: `Assignment received — ${escapeHtml(courseDisplayName)}`,
+    subject: `Assignment received — ${escapeHtml(context)}`,
     html: `
       <html>
         <body style="${baseEmailStyles}">
@@ -392,7 +402,7 @@ export const buildStudentEmail = (options: StudentEmailOptions) => {
                   style="height:40px; width:auto; display:block; margin:0;"
                 />
                 <h1 style="margin: 12px 0 0; font-size: 24px;">We received your files</h1>
-                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
+                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(context)}</p>
               </div>
               <div style="${sectionStyles}">
                 <p style="margin: 0 0 16px; color: #FFFFFF; font-size: 16px; line-height: 1.6;">
@@ -421,6 +431,7 @@ export const buildStudentEmail = (options: StudentEmailOptions) => {
 
 type RestoreBatchItem = {
   courseDisplayName: string;
+  projectName?: string | null;
   studentName: string | null;
   restoreExpiresAtIso: string;
 };
@@ -434,7 +445,7 @@ export const buildRestoreBatchCompleteEmail = (options: RestoreBatchCompleteEmai
   const { items, portalUrl } = options;
   const count = items.length;
   const subject = count === 1
-    ? `Glacier restore complete — ${escapeHtml(items[0].courseDisplayName)}`
+    ? `Glacier restore complete — ${escapeHtml(withProject(items[0].courseDisplayName, items[0].projectName))}`
     : `Glacier restore complete — ${count} submissions`;
 
   const itemsHtml = items
@@ -444,7 +455,7 @@ export const buildRestoreBatchCompleteEmail = (options: RestoreBatchCompleteEmai
       return `
         <tr>
           <td style="padding: 10px 12px; border-bottom: 1px solid #2F3035; color: #FFFFFF; font-size: 14px;">${student}</td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #2F3035; color: #FFFFFF; font-size: 14px;">${escapeHtml(item.courseDisplayName)}</td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #2F3035; color: #FFFFFF; font-size: 14px;">${escapeHtml(withProject(item.courseDisplayName, item.projectName))}</td>
           <td style="padding: 10px 12px; border-bottom: 1px solid #2F3035; color: #CCCCCC; font-size: 13px;">${expiry}</td>
         </tr>
       `;
@@ -510,11 +521,12 @@ export const buildRestoreBatchCompleteEmail = (options: RestoreBatchCompleteEmai
 };
 
 export const buildWorkViewedEmail = (options: WorkViewedEmailOptions) => {
-  const { courseDisplayName, studentName, educatorName, accessedAtIso } = options;
+  const { courseDisplayName, projectName, studentName, educatorName, accessedAtIso } = options;
   const formattedTimestamp = formatTimestamp(accessedAtIso);
+  const context = withProject(courseDisplayName, projectName);
 
   return {
-    subject: `Your assignment has been accessed — ${escapeHtml(courseDisplayName)}`,
+    subject: `Your assignment has been accessed — ${escapeHtml(context)}`,
     html: `
       <html>
         <body style="${baseEmailStyles}">
@@ -527,7 +539,7 @@ export const buildWorkViewedEmail = (options: WorkViewedEmailOptions) => {
                   style="height:40px; width:auto; display:block; margin:0;"
                 />
                 <h1 style="margin: 12px 0 0; font-size: 24px;">Your work has been viewed</h1>
-                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(courseDisplayName)}</p>
+                <p style="margin: 8px 0 0; font-size: 16px; opacity: 0.9;">${escapeHtml(context)}</p>
               </div>
               <div style="${sectionStyles}">
                 <p style="margin: 0 0 16px; color: #FFFFFF; font-size: 16px; line-height: 1.6;">

@@ -85,6 +85,7 @@ export type AdminSubmission = {
   submissionId: string;
   courseId: string;
   courseName: string | null;
+  projectName: string | null;
   educatorName: string | null;
   educatorEmails: string[];
   studentName: string | null;
@@ -108,7 +109,28 @@ export type AdminSubmission = {
   storageClass: string | null;
   restoreStatus: string | null;
   restoreExpiresAt: string | null;
+} & SubmissionBackupState;
+
+export type SubmissionBackupState = {
+  driveUploadedAt: string | null;
+  driveUploadedBy: string | null;
+  backupCheckedAt: string | null;
+  backupCheckedBy: string | null;
 };
+
+export type UpdateSubmissionBackupPayload = {
+  driveUploaded?: boolean;
+  backupChecked?: boolean;
+};
+
+export type UpdateSubmissionBackupResponse = SubmissionBackupState & {
+  submissionId: string;
+};
+
+export type SubmissionBackupFilter = 'not_on_drive' | 'not_checked' | 'complete';
+
+// Project filter value that matches submissions without a project (mirrors the backend).
+export const NO_PROJECT_FILTER = '__none__';
 
 export type ListSubmissionsRequest = {
   page?: number;
@@ -118,6 +140,8 @@ export type ListSubmissionsRequest = {
   courseId?: string;
   educatorEmail?: string;
   student?: string;
+  project?: string;
+  backup?: SubmissionBackupFilter;
   accessed?: 'viewed' | 'not_viewed';
   sortField?:
     | 'createdAt'
@@ -126,6 +150,7 @@ export type ListSubmissionsRequest = {
     | 'lastAccessedAt'
     | 'courseId'
     | 'courseName'
+    | 'projectName'
     | 'educatorName'
     | 'studentName'
     | 'status'
@@ -140,6 +165,7 @@ export type ListSubmissionsResponse = {
   pageSize: number;
   totalPages: number;
   totalCount: number;
+  projects: string[];
 };
 
 const withAuthHeader = (token: string) => ({
@@ -238,6 +264,19 @@ export const remindSubmission = async (token: string, submissionId: string): Pro
 
 export const deleteSubmission = async (token: string, submissionId: string): Promise<void> => {
   await api.delete(`/admin/submissions/${encodeURIComponent(submissionId)}`, withAuthHeader(token));
+};
+
+export const updateSubmissionBackup = async (
+  token: string,
+  submissionId: string,
+  payload: UpdateSubmissionBackupPayload
+): Promise<UpdateSubmissionBackupResponse> => {
+  const { data } = await api.put<UpdateSubmissionBackupResponse>(
+    `/admin/submissions/${encodeURIComponent(submissionId)}/backup`,
+    payload,
+    withAuthHeader(token)
+  );
+  return data;
 };
 
 export const restoreSubmission = async (token: string, submissionId: string): Promise<void> => {

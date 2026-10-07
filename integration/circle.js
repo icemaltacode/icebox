@@ -5,6 +5,9 @@
  *
  * ICEBox links must contain these placeholders in their href:
  * https://icebox.icecampus.com/?studentEmail=PLACEHOLDER_EMAIL&class=PLACEHOLDER_CLASS&studentId=PLACEHOLDER_ID&studentName=PLACEHOLDER_NAME&token=PLACEHOLDER_TOKEN
+ *
+ * The project is taken from the title of the lesson the link sits on. Append
+ * &project=Your%20Project%20Name to a link to set it explicitly instead.
  */
 
 /* Script starts here. Copy as-is - do not add <script> tags */
@@ -77,6 +80,14 @@
     } catch { return null; }
   };
 
+  // Circle renders the lesson title as an h2 in the <main> that holds the lesson body.
+  // document.title is not usable: after a full reload it shows the space name instead.
+  const getProjectName = (a) => {
+    const main = a.closest('main') || document.querySelector('main');
+    const heading = main?.querySelector('h2.text-heading-2xl') || main?.querySelector('h2');
+    return heading?.textContent.replace(/\s+/g, ' ').trim() || null;
+  };
+
   const updateIcebox = () => {
     const { email, id: studentId, name: studentName } = getStudent();
     const cls = getClassSlug();
@@ -111,6 +122,8 @@
         a.addEventListener('click', async (event) => {
           ensureReferrer();
           event.preventDefault();
+          // Resolved on click: the title may not be rendered yet when the link is first processed.
+          const project = getProjectName(a);
           try {
             const shortToken = await requestShortToken();
             if (!shortToken) {
@@ -119,6 +132,9 @@
             }
             const nav = new URL(a.href, location.href);
             nav.searchParams.set('token', shortToken);
+            if (project && !nav.searchParams.get('project')) {
+              nav.searchParams.set('project', project);
+            }
             window.open(nav.toString(), '_blank', 'noopener');
           } catch (err) {
             console.error('[ICE] ICEBox: Failed to request short token', err);

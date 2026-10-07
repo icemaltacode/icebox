@@ -4,22 +4,18 @@ import { SendEmailCommand } from '@aws-sdk/client-ses';
 
 import { getDynamoDbDocumentClient, getSesClient } from '../../lib/aws';
 import { ASSIGNMENTS_TABLE, SES_SOURCE_EMAIL } from '../../lib/env';
-import { AdminAuthConfigurationError, AdminClaims, requireAdminClaims, UnauthorizedError } from '../../lib/adminAuth';
+import {
+  AdminAuthConfigurationError,
+  AdminClaims,
+  requireAdminClaims,
+  resolveActorEmail,
+  UnauthorizedError
+} from '../../lib/adminAuth';
 import { toSubmissionRecord } from '../../lib/submissions';
 import { ValidationError } from '../../lib/errors';
 import { buildEducatorEmail } from '../../lib/emailTemplates';
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
-const resolveActorEmail = (claims: AdminClaims): string => {
-  if (claims.email) {
-    return claims.email;
-  }
-  if (claims['cognito:username']) {
-    return claims['cognito:username'] as string;
-  }
-  return 'unknown-admin@icecampus.com';
-};
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   let adminClaims: AdminClaims;
@@ -116,6 +112,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const emailContent = buildEducatorEmail({
     courseDisplayName,
     courseCode: submission.courseId,
+    projectName: submission.projectName ?? undefined,
     educatorName: submission.courseEducatorName ?? undefined,
     studentName: submission.studentName ?? undefined,
     studentId: submission.studentId ?? undefined,

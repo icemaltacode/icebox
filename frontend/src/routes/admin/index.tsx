@@ -780,7 +780,7 @@ const INTEGRATION_LINK_TEMPLATE =
 export const AdminIntegrationPage = () => {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<number>();
+  const resetTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => () => {
     if (resetTimerRef.current) {
@@ -821,6 +821,8 @@ export const AdminIntegrationPage = () => {
           <CardTitle>Launch link template</CardTitle>
           <CardDescription>
             Use this link in Circle to allow students to upload their work. Do not replace any values.
+            The project is taken from the title of the Circle lesson the link is placed on. To set it
+            explicitly instead, append <code>&amp;project=Your%20Project%20Name</code> to the link.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
