@@ -14,7 +14,7 @@ const serverlessConfiguration = {
   configValidationMode: 'error',
   provider: {
     name: 'aws',
-    runtime: 'nodejs20.x',
+    runtime: 'nodejs24.x',
     profile: 'ice',
     stage,
     region: ('${opt:region, env:AWS_REGION, "eu-south-1"}' as unknown) as AWS['provider']['region'],
@@ -176,7 +176,7 @@ const serverlessConfiguration = {
       bundle: true,
       minify: false,
       sourcemap: true,
-      target: 'node20',
+      target: 'node24',
       platform: 'node'
     }
   },
@@ -468,7 +468,7 @@ const serverlessConfiguration = {
       events: [
         {
           schedule: {
-            rate: 'rate(15 minutes)',
+            rate: ['rate(15 minutes)'],
             enabled: true
           }
         }

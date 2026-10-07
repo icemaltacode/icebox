@@ -17,7 +17,7 @@
   "license": "AGPL-3.0-only",
   "type": "commonjs",
   "devDependencies": {
-    "@serverless/typescript": "^4.20.2",
+    "@serverless/typescript": "^4.30.0",
     "@types/archiver": "^6.0.4",
     "@types/aws-lambda": "^8.10.156",
     "@types/node": "^24.9.1",

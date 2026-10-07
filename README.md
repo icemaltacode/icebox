@@ -38,7 +38,7 @@ See [Architecture Diagrams](docs/Architecture.md).
 
 ## Prerequisites
 
-- **Node.js 20.x** (aligned with Lambda runtime) and **npm 9+**
+- **Node.js 24.x** (aligned with Lambda runtime) and **npm 9+**
 - **AWS CLI** and credentials with permissions to deploy serverless stacks, create S3 buckets, CloudFront distributions, ACM certificates, etc.
 - **Serverless Framework CLI** (`npm install -g serverless`) if deploying manually
 - **dotenv-cli** is installed as a dev dependency in both apps for loading stage-specific env files.

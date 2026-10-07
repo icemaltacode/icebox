@@ -90,7 +90,7 @@ graph TB
     DNS --> CF --> S3FE["S3: Static Site (Frontend)"]
 
     APIGW["API Gateway (HTTP API)"]
-    Lambdas["Lambda Functions (Node.js 20)"]
+    Lambdas["Lambda Functions (Node.js 24)"]
     DDB1["DynamoDB: Assignments"]
     DDB2["DynamoDB: Courses"]
     S3A["S3: Assignments Bucket\n(lifecycle → Glacier 30d, purge 180d)"]
